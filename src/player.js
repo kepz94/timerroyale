@@ -61,6 +61,56 @@ function renderGame() {
 
   const teamsBtn = el('teams-btn');
   const kothBtn = el('koth-btn');
+  const guessBtn = el('guess-btn');
+  const guessForm = el('guess-form');
+
+  // ---- Guess Timer branch (TR-28) ----
+  if (game?.mode === 'guess') {
+    teamsBtn.hidden = true;
+    el('rematch-btn').hidden = true;
+    kothBtn.hidden = true;
+    el('koth-n').hidden = true;
+    el('hard-toggle').hidden = true;
+    const slot = game.players?.[me.playerId];
+    const over = game.status === 'over';
+    btn.hidden = true;
+    if (game.status === 'get-ready' || game.status === 'interval') {
+      guessForm.hidden = true;
+      startBtn.hidden = true;
+      banner.textContent = '👀 Eyes on the TV!';
+      hint.textContent = 'Feel the gap between the two beeps.';
+      return;
+    }
+    if (game.status === 'guessing') {
+      startBtn.hidden = true;
+      if (slot?.state === 'waiting') {
+        guessForm.hidden = false;
+        el('guess-submit').disabled = false;
+        banner.textContent = 'How long was it?';
+        hint.textContent = '';
+      } else {
+        guessForm.hidden = true;
+        banner.textContent = '🔒 Locked in!';
+        hint.textContent = 'Waiting for the others…';
+      }
+      return;
+    }
+    if (over) {
+      guessForm.hidden = true;
+      const iWon = game.winner?.playerId === me.playerId;
+      if (iWon) banner.textContent = '🏆 Closest guess!';
+      else if (slot?.state === 'dnf') banner.textContent = 'No guess that round';
+      else banner.textContent = `You guessed ${(slot.guessMs / 1000).toFixed(2)}s — off by ${fmtOff(slot.deltaMs)}s`;
+      hint.textContent = 'Results on the TV.';
+      startBtn.hidden = !isCaptain();
+      startBtn.textContent = 'New game';
+      guessBtn.hidden = !isCaptain();
+      guessBtn.textContent = 'Guess again';
+      return;
+    }
+  }
+  guessForm.hidden = true;
+  // ---- end guess branch ----
   // ---- KOTH branch (TR-12) ----
   if (match?.type === 'koth') {
     teamsBtn.hidden = true;
@@ -171,6 +221,8 @@ function renderGame() {
     teamsBtn.textContent = 'Team match';
     kothBtn.hidden = startBtn.hidden;
     if (kothBtn.hidden) el('koth-n').hidden = true;
+    el('guess-btn').hidden = startBtn.hidden;
+    el('guess-btn').textContent = 'Guess Timer';
     el('hard-toggle').hidden = startBtn.hidden;
   }
 
@@ -306,6 +358,23 @@ function wireButtons() {
   });
   el('koth-btn').addEventListener('click', () => {
     el('koth-n').hidden = !el('koth-n').hidden;
+  });
+  el('guess-btn').addEventListener('click', () => {
+    sendEvent(dbRef, room, me.playerId, 'start-guess');
+    logTransition('player-ui', 'lobby', 'start-guess-sent', me.playerId);
+  });
+  el('guess-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = parseFloat(el('guess-input').value.replace(',', '.'));
+    if (!Number.isFinite(v) || v <= 0 || v > 99) {
+      el('guess-error').textContent = 'Enter seconds, like 4.7';
+      return;
+    }
+    el('guess-error').textContent = '';
+    el('guess-submit').disabled = true;
+    el('guess-input').value = '';
+    sendEvent(dbRef, room, me.playerId, 'guess', { value: Math.round(v * 1000) });
+    logTransition('player-ui', 'guessing', 'guess-sent', `${me.playerId} ${v}s`);
   });
   for (const b of document.querySelectorAll('.koth-n-btn')) {
     b.addEventListener('click', () => {

@@ -25,6 +25,14 @@
         <p id="join-error" class="join-error" role="alert"></p>
       </form>
 
+      <form id="guess-form" class="join-form guess-form" hidden>
+        <label for="guess-input" class="join-label">How long was it? (seconds)</label>
+        <input id="guess-input" class="name-input code-input" type="text" inputmode="decimal"
+               autocomplete="off" maxlength="5" placeholder="4.7" />
+        <button id="guess-submit" class="join-btn" type="submit">Lock it in</button>
+        <p id="guess-error" class="join-error" role="alert"></p>
+      </form>
+
       <div id="joined-panel" class="joined-panel" hidden>
         <p id="joined-name" class="joined-name"></p>
         <p id="turn-banner" class="turn-banner"></p>
@@ -38,6 +46,7 @@
         <button id="rematch-btn" class="join-btn" type="button" hidden>Rematch</button>
         <button id="teams-btn" class="join-btn" type="button" hidden>Team match</button>
         <button id="koth-btn" class="join-btn" type="button" hidden>King of the Hill</button>
+        <button id="guess-btn" class="join-btn" type="button" hidden>Guess Timer</button>
         <div id="koth-n" class="koth-n" hidden>
           <button class="join-btn koth-n-btn" data-n="3" type="button">First to 3</button>
           <button class="join-btn koth-n-btn" data-n="5" type="button">First to 5</button>

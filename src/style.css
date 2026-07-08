@@ -237,3 +237,11 @@ h1 { color: var(--primary); text-shadow: var(--led-glow); }
 /* ---- TR-25: final score is the headline ---- */
 .final-score { color: var(--win); text-shadow: var(--led-glow-win); }
 .game-msg.final { font-size: var(--fs-title); color: var(--win); font-weight: 800; min-height: 1.3em; }
+
+
+/* ---- TR-28: guess timer ---- */
+.flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 50; }
+@keyframes flash-pop { 0% { opacity: 0; } 12% { opacity: 0.95; } 100% { opacity: 0; } }
+.flash.start { background: var(--primary); animation: flash-pop 500ms ease-out; }
+.flash.stop { background: var(--danger); animation: flash-pop 650ms ease-out; }
+.guess-form { margin-top: var(--gap-lg); }

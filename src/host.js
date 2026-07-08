@@ -10,6 +10,9 @@ import { createRound, randomTarget } from './round.js';
 import { createMatch, clearMatch } from './elimination.js';
 import { createTeamMatch } from './teammatch.js';
 import { createKoth } from './koth.js';
+import { createGuessRound, randomGuessTarget } from './guess.js';
+import { sfxStart, sfxStop } from './sfx.js';
+import { fmtS2 } from './format.js';
 
 const el = (id) => document.getElementById(id);
 const fmt = (ms) => (ms / 1000).toFixed(1);
@@ -101,6 +104,7 @@ function renderRelayRows(g) {
 const tv = {
   state(g) {
     lastState = g;
+    if (g.mode === 'guess') { renderGuess(g); return; }
     el('target-digits').innerHTML = `${fmt(g.targetMs)}<span class="timer-unit">s</span>`;
     if (g.mode === 'relay') { renderRelayRows(g); refreshOfflineRows(); return; }
     const rows = el('round-rows');
@@ -146,6 +150,65 @@ function tickLiveTimers() {
     }
   }
   rafId = requestAnimationFrame(tickLiveTimers);
+}
+
+function fireMoment(kind) {
+  const f = el('flash');
+  f.classList.remove('start', 'stop');
+  void f.offsetWidth;
+  f.classList.add(kind);
+  try { kind === 'start' ? sfxStart() : sfxStop(); } catch { /* cast tabs may block audio */ }
+}
+
+function renderGuess(g) {
+  el('match-banner').textContent = '🎧 GUESS TIMER';
+  el('target-digits').innerHTML = g.status === 'over'
+    ? `${fmtS2(g.actualMs)}<span class="timer-unit">s</span>`
+    : `?.??<span class="timer-unit">s</span>`;
+  const rows = el('round-rows');
+  rows.innerHTML = '';
+  const order = g.status === 'over' && g.ranking
+    ? g.ranking.concat(Object.keys(g.players).filter((id) => !g.ranking.includes(id)))
+    : Object.keys(g.players);
+  order.forEach((id) => {
+    const s = g.players[id];
+    const li = document.createElement('li');
+    const cls = s.state === 'guessed' ? 'stopped' : s.state === 'dnf' ? 'dnf' : 'waiting';
+    li.className = `round-row ${cls}`;
+    li.dataset.playerId = id;
+    const right = g.status === 'over'
+      ? (s.state === 'dnf' ? 'no guess' : `${fmtS2(s.guessMs)}s <span class="deviation">Δ ${fmtOff(s.deltaMs)}s</span>`)
+      : (s.state === 'guessed' ? '🔒 locked in' : '…thinking');
+    const medal = g.status === 'over' && g.ranking?.[0] === id ? '🏆 ' : '';
+    li.innerHTML = `<span class="row-name">${medal}${s.name}</span><span class="row-time">${right}</span>`;
+    rows.appendChild(li);
+  });
+  el('game-msg').classList.toggle('final', g.status === 'over');
+  if (g.status === 'get-ready') el('game-msg').textContent = '👂 Listen closely — eyes on the screen…';
+  else if (g.status === 'interval') el('game-msg').textContent = '⏱ …';
+  else if (g.status === 'guessing') el('game-msg').textContent = 'How long was that? Type your guess on your phone!';
+  else if (g.status === 'over') el('game-msg').textContent = g.winner
+    ? `🏆 ${g.winner.name} was closest — guessed ${fmtS2(g.winner.guessMs)}s (Δ ${fmtOff(g.winner.deltaMs)}s)!`
+    : 'Nobody guessed — next round from your phones!';
+  refreshOfflineRows();
+}
+
+function startGuess(trigger) {
+  const players = roster.map(({ playerId, name }) => ({ playerId, name }));
+  match = null;
+  clearMatch(window.__db, window.__room);
+  el('match-banner').textContent = '🎧 GUESS TIMER';
+  el('standings').innerHTML = '';
+  round = createGuessRound({
+    db: window.__db, room: window.__room, players,
+    targetMs: randomGuessTarget(),
+    onTv: { state: renderGuess },
+    onMoment: fireMoment
+  });
+  showGameView(true);
+  el('status').textContent = 'Guess Timer round';
+  round.begin();
+  logTransition('host-ui', 'lobby-open', 'guess-started', trigger);
 }
 
 function startRound(trigger, hard = false) {
@@ -298,6 +361,10 @@ async function startLobby() {
       }
       if (ev.type === 'start-teams' && isCaptain && !match && (!round || round.isOver())) {
         startTeamMatch(`start-teams event ${ev.eventId} from captain`);
+        return;
+      }
+      if (ev.type === 'start-guess' && isCaptain && !match && (!round || round.isOver())) {
+        startGuess(`start-guess event ${ev.eventId} from captain`);
         return;
       }
       if (ev.type === 'start-koth' && isCaptain && !match && (!round || round.isOver())) {
