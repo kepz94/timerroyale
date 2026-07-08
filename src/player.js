@@ -14,6 +14,7 @@ let currentPlayers = [];
 let me = null;
 let dbRef = null;
 let game = null;
+let match = null;
 
 function isCaptain() {
   return me && currentPlayers.length > 0 && currentPlayers[0].playerId === me.playerId;
@@ -30,10 +31,47 @@ function renderGame() {
   const running = game?.status === 'running';
   const over = game?.status === 'over';
   const mySlot = game?.players?.[me.playerId] ?? null;
+  const inMatch = match && match.status !== undefined;
+  const iAmEliminated = inMatch && (match.eliminated || []).some((e) => e.playerId === me.playerId);
+  const iAmChampion = inMatch && match.status === 'champion' && match.champion?.playerId === me.playerId;
 
-  startBtn.hidden = !(isCaptain() && !running && currentPlayers.length >= 2);
-  startBtn.textContent = over ? 'Next round' : 'Start round';
-  el('rematch-btn').hidden = true; // superseded by start/next-round; kept for markup stability
+  const elimBtn = el('rematch-btn');
+  if (inMatch && match.status !== 'champion') {
+    startBtn.hidden = !(isCaptain() && match.status === 'between');
+    startBtn.textContent = 'Next round';
+    elimBtn.hidden = true;
+  } else {
+    startBtn.hidden = !(isCaptain() && !running && currentPlayers.length >= 2);
+    startBtn.textContent = over || match?.status === 'champion' ? 'New game' : 'Start round';
+    elimBtn.hidden = startBtn.hidden || currentPlayers.length < 3;
+    elimBtn.textContent = 'Elimination match';
+  }
+
+  if (iAmEliminated && match.status !== 'champion') {
+    banner.textContent = '💀 ELIMINATED';
+    label.textContent = '···';
+    btn.disabled = true;
+    btn.classList.remove('your-turn');
+    btn.classList.add('waiting');
+    hint.textContent = 'Spectating — watch the TV.';
+    return;
+  }
+  if (iAmChampion) {
+    banner.textContent = '👑 CHAMPION!';
+    label.textContent = 'PRESS';
+    btn.disabled = true;
+    btn.classList.remove('your-turn', 'waiting');
+    hint.textContent = startBtn.hidden ? '' : 'Run it back?';
+    return;
+  }
+  if (inMatch && match.status === 'champion' && !iAmChampion) {
+    banner.textContent = `👑 ${match.champion?.name} wins the match`;
+    label.textContent = 'PRESS';
+    btn.disabled = true;
+    btn.classList.remove('your-turn', 'waiting');
+    hint.textContent = startBtn.hidden ? '' : 'Run it back?';
+    return;
+  }
 
   if (running && mySlot) {
     const target = (game.targetMs / 1000).toFixed(1);
@@ -97,6 +135,10 @@ function wireButtons() {
     sendEvent(dbRef, room, me.playerId, 'start');
     logTransition('player-ui', 'lobby', 'start-sent', me.playerId);
   });
+  el('rematch-btn').addEventListener('click', () => {
+    sendEvent(dbRef, room, me.playerId, 'start-elim');
+    logTransition('player-ui', 'lobby', 'start-elim-sent', me.playerId);
+  });
 }
 
 async function start() {
@@ -123,6 +165,10 @@ async function start() {
   watchPlayers(db, room, (players) => { currentPlayers = players; renderGame(); });
   onValue(ref(db, `sessions/${room}/game`), (snap) => {
     game = snap.val();
+    renderGame();
+  });
+  onValue(ref(db, `sessions/${room}/match`), (snap) => {
+    match = snap.val();
     renderGame();
   });
 

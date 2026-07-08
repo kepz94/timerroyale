@@ -5,11 +5,13 @@ import { createSession, playerJoinUrl, logTransition } from './session.js';
 import { watchPlayers } from './players.js';
 import { consumeEvents } from './engine.js';
 import { createRound, randomTarget } from './round.js';
+import { createMatch, clearMatch } from './elimination.js';
 
 const el = (id) => document.getElementById(id);
 const fmt = (ms) => (ms / 1000).toFixed(1);
 let roster = [];
 let round = null;
+let match = null;
 let rafId = null;
 
 function renderPlayers(players) {
@@ -95,11 +97,52 @@ function tickLiveTimers() {
 
 function startRound(trigger) {
   const players = roster.map(({ playerId, name }) => ({ playerId, name }));
+  match = null;
+  clearMatch(window.__db, window.__room);
+  el('match-banner').textContent = '';
+  el('standings').innerHTML = '';
   round = createRound({ db: window.__db, room: window.__room, players, targetMs: randomTarget(), onTv: tv });
   showGameView(true);
   el('status').textContent = 'Round in progress';
   round.begin();
   logTransition('host-ui', 'lobby-open', 'round-started', trigger);
+}
+
+function renderMatch(m, justOut) {
+  el('match-banner').textContent = m.status === 'champion'
+    ? '👑 CHAMPION 👑'
+    : `Elimination — Round ${m.roundNum}`;
+  const standings = el('standings');
+  standings.innerHTML = '';
+  for (const [playerId, name] of Object.entries(m.alive || {})) {
+    const li = document.createElement('li');
+    li.className = 'standing alive';
+    li.textContent = name;
+    standings.appendChild(li);
+  }
+  for (const e of [...(m.eliminated || [])].reverse()) {
+    const li = document.createElement('li');
+    li.className = 'standing out';
+    li.textContent = `${e.name} — out R${e.round}`;
+    standings.appendChild(li);
+  }
+  if (m.status === 'champion') {
+    el('game-msg').textContent = `👑 ${m.champion.name} is the last one standing!`;
+  } else if (m.status === 'between') {
+    const names = justOut.map((s) => s.name).join(', ');
+    el('game-msg').textContent = (names ? `💀 ${names} eliminated! ` : 'Nobody eliminated — replay! ')
+      + `${Object.keys(m.alive).length} remain. Captain: next round!`;
+  }
+}
+
+function startMatch(trigger) {
+  const players = roster.map(({ playerId, name }) => ({ playerId, name }));
+  round = null;
+  match = createMatch({ db: window.__db, room: window.__room, players, onTv: tv, onMatch: renderMatch });
+  showGameView(true);
+  el('status').textContent = 'Elimination match';
+  match.nextRound();
+  logTransition('host-ui', 'lobby-open', 'match-started', trigger);
 }
 
 async function startLobby() {
@@ -133,11 +176,20 @@ async function startLobby() {
       if (ev.type === 'press') {
         window.__pressLog.push({ eventId: ev.eventId, playerId: ev.playerId, latencyMs: ev.latencyMs });
       }
-      if (ev.type === 'press' && !round) { flashChip(ev.playerId); return; }
-      if (ev.type === 'start' && (!round || round.isOver()) && roster.length >= 2 && ev.playerId === roster[0].playerId) {
-        startRound(`start event ${ev.eventId} from captain`);
+      if (ev.type === 'press' && !round && !match) { flashChip(ev.playerId); return; }
+      const isCaptain = roster.length >= 2 && ev.playerId === roster[0]?.playerId;
+      if (ev.type === 'start-elim' && isCaptain && !match && (!round || round.isOver())) {
+        startMatch(`start-elim event ${ev.eventId} from captain`);
         return;
       }
+      if (ev.type === 'start' && isCaptain) {
+        if (match?.isBetween()) { match.nextRound(); return; }
+        if (match?.isChampion() || (!match && (!round || round.isOver()))) {
+          startRound(`start event ${ev.eventId} from captain`);
+          return;
+        }
+      }
+      if (match) { match.handleEvent(ev); return; }
       round?.handleEvent(ev);
     });
   } catch (err) {

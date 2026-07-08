@@ -127,3 +127,10 @@ h1 { font-size: var(--fs-title); letter-spacing: 0.05em; }
 .row-time { font-variant-numeric: tabular-nums; }
 .deviation { color: var(--text-dim); font-size: var(--fs-small); margin-left: 0.5rem; }
 #big-btn-label { pointer-events: none; }
+
+/* ---- TR-6: elimination match ---- */
+.match-banner { font-size: var(--fs-body); font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.2em; min-height: 1.2em; }
+.standings { list-style: none; display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; margin-top: var(--gap); }
+.standing { padding: 0.35rem 1rem; border-radius: var(--radius-round); font-size: var(--fs-small); }
+.standing.alive { background: var(--surface-raised); color: var(--state-alive); }
+.standing.out { background: transparent; color: var(--state-eliminated); text-decoration: line-through; opacity: 0.7; }
