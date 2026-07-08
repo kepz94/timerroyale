@@ -13,3 +13,25 @@ body {
 h1 { font-size: var(--fs-title); letter-spacing: 0.05em; }
 .subtitle { color: var(--accent); margin-top: 0.5rem; font-size: var(--fs-body); }
 #status { margin-top: var(--gap-lg); color: var(--text-dim); font-size: var(--fs-small); }
+
+/* ---- TR-2: TV lobby ---- */
+.lobby { display: grid; gap: var(--gap-lg); padding: var(--gap-lg); }
+.join-panel {
+  display: flex; gap: var(--gap-lg); align-items: center; justify-content: center;
+  flex-wrap: wrap;
+}
+.qr-card {
+  background: #ffffff; padding: var(--gap); border-radius: var(--radius);
+  line-height: 0;
+}
+.room-info { text-align: left; }
+.room-label, .players-label { color: var(--text-dim); font-size: var(--fs-small); text-transform: uppercase; letter-spacing: 0.15em; }
+.room-code { font-size: var(--fs-hero); font-weight: 800; color: var(--primary); letter-spacing: 0.1em; line-height: 1.1; }
+.join-url { color: var(--text-dim); font-size: var(--fs-body); }
+.players-panel { min-height: 6rem; }
+.player-list { list-style: none; display: flex; gap: var(--gap); justify-content: center; flex-wrap: wrap; }
+.player-list li {
+  background: var(--surface-raised); padding: 0.5rem 1.25rem; border-radius: var(--radius-round);
+  font-size: var(--fs-body);
+}
+.players-empty { color: var(--text-dim); }

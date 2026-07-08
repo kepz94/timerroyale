@@ -7,10 +7,28 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body class="host">
-    <main id="app">
+    <main id="app" class="lobby">
       <h1>TimerRoyale</h1>
-      <p class="subtitle">Host view (TV)</p>
-      <p id="status">Skeleton OK — Firebase not yet configured.</p>
+      <p class="subtitle">Scan to join the game</p>
+
+      <section class="join-panel" aria-label="How to join">
+        <div class="qr-card">
+          <canvas id="qr"></canvas>
+        </div>
+        <div class="room-info">
+          <p class="room-label">Room code</p>
+          <p id="room-code" class="room-code">····</p>
+          <p id="join-url" class="join-url"></p>
+        </div>
+      </section>
+
+      <section class="players-panel" aria-label="Players">
+        <p class="players-label">Players</p>
+        <ul id="player-list" class="player-list"></ul>
+        <p id="players-empty" class="players-empty">No one has joined yet</p>
+      </section>
+
+      <p id="status">Creating room…</p>
     </main>
     <script type="module" src="/src/host.js"></script>
   </body>
