@@ -19,7 +19,7 @@ let game = null;
 let match = null;
 
 const fmtS = (ms) => (ms / 1000).toFixed(1);
-import { fmtOff } from './format.js';
+import { fmtOff, fmtS2 } from './format.js';
 
 function shareText() {
   const url = 'https://timerroyale.web.app';
@@ -33,7 +33,7 @@ function shareText() {
     return `👑 ${match.champion.name} outlasted everyone in TimerRoyale last-man-standing! Play: ${url}`;
   }
   if (game?.status === 'over' && game.winner) {
-    return `🏆 ${game.winner.name} hit ${fmtS(game.winner.elapsedMs)}s on a ${fmtS(game.targetMs)}s target (Δ ${fmtOff(game.winner.deviationMs)}s) in TimerRoyale! Play: ${url}`;
+    return `🏆 ${game.winner.name} hit ${fmtS2(game.winner.elapsedMs)}s on a ${fmtS(game.targetMs)}s target (Δ ${fmtOff(game.winner.deviationMs)}s) in TimerRoyale! Play: ${url}`;
   }
   return null;
 }

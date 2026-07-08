@@ -6,7 +6,7 @@ registerSW({ immediate: true });
 
 const el = (id) => document.getElementById(id);
 const fmtS = (ms) => (ms / 1000).toFixed(1);
-import { fmtOff } from './format.js';
+import { fmtOff, fmtS2 } from './format.js';
 let game = null;
 let shownTotal = 0;
 let mode = 'solo'; // solo | daily
@@ -22,7 +22,7 @@ function setYou(ms) {
     you.innerHTML = `--<span class="timer-unit">s</span>`;
   } else {
     you.classList.remove('dim');
-    you.innerHTML = `${fmtS(ms)}<span class="timer-unit">s</span>`;
+    you.innerHTML = `${fmtS2(ms)}<span class="timer-unit">s</span>`;
   }
 }
 
@@ -74,7 +74,7 @@ function appendResult(attempt, roundNum) {
   const li = document.createElement('li');
   li.className = 'round-row stopped';
   li.innerHTML = `<span class="row-name">R${roundNum}: ${fmtS(attempt.targetMs)}s target</span>` +
-    `<span class="row-time">${fmtS(attempt.elapsedMs)}s <span class="deviation">off by ${fmtOff(attempt.deviationMs)}s</span></span>`;
+    `<span class="row-time">${fmtS2(attempt.elapsedMs)}s <span class="deviation">off by ${fmtOff(attempt.deviationMs)}s</span></span>`;
   el('solo-results').appendChild(li);
 }
 

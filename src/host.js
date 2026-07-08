@@ -13,7 +13,7 @@ import { createKoth } from './koth.js';
 
 const el = (id) => document.getElementById(id);
 const fmt = (ms) => (ms / 1000).toFixed(1);
-import { fmtOff } from './format.js';
+import { fmtOff, fmtS2 } from './format.js';
 let roster = [];
 let round = null;
 let match = null;
@@ -114,7 +114,7 @@ const tv = {
       li.className = `round-row ${s.state}`;
       li.dataset.playerId = playerId;
       const timer = s.state === 'stopped'
-        ? `${fmt(s.elapsedMs)}s <span class="deviation">Δ ${fmtOff(s.deviationMs)}s</span>`
+        ? `${fmtS2(s.elapsedMs)}s <span class="deviation">Δ ${fmtOff(s.deviationMs)}s</span>`
         : s.state === 'dnf' ? 'DNF'
         : s.state === 'running' ? `<span class="live-timer">0.0</span>s`
         : '—';
@@ -128,7 +128,7 @@ const tv = {
       el('game-msg').textContent = 'Tap to start your timer, tap again to stop it — land on the target!';
     } else if (g.status === 'over') {
       el('game-msg').textContent = g.winner
-        ? `🏆 ${g.winner.name} wins — ${fmt(g.winner.elapsedMs)}s (Δ ${fmtOff(g.winner.deviationMs)}s). Next round from your phones!`
+        ? `🏆 ${g.winner.name} wins — ${fmtS2(g.winner.elapsedMs)}s (Δ ${fmtOff(g.winner.deviationMs)}s). Next round from your phones!`
         : (g.hard && g.ranking?.length
             ? '🔥 Nobody hit it exactly — no winner! Next round from your phones!'
             : 'Nobody finished — next round from your phones!');
