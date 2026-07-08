@@ -1,6 +1,6 @@
 // Landing page: single player front and center; Host a Game -> /host.html.
 import { createSoloGame, SOLO_ROUNDS } from './solo.js';
-import { watchAuth, signInGoogle, signOutUser } from './auth.js';
+import { watchAuth, signInGoogle, signOutUser, getProfile, claimUsername, validUsername } from './auth.js';
 import { DAILY_ROUNDS, dateKey, dailyTargets, todayResult, saveResult, msToMidnight, ratingColor } from './daily.js';
 import { createGuessSoloGame, GUESS_SOLO_ROUNDS } from './guesssolo.js';
 import { sfxStart, sfxStop } from './sfx.js';
@@ -11,11 +11,43 @@ import { initFirebase } from './firebase.js';
 const el = (id) => document.getElementById(id);
 const db = initFirebase();
 
-watchAuth((user) => {
+let currentUser = null;
+
+async function refreshChip(user) {
+  currentUser = user;
   el('auth-btn').hidden = !!user;
   el('auth-name').hidden = !user;
   el('signout-btn').hidden = !user;
-  if (user) el('auth-name').textContent = user.displayName || 'Player';
+  el('username-form').hidden = true;
+  if (!user) return;
+  const profile = await getProfile(db, user.uid);
+  if (profile) {
+    el('auth-name').textContent = profile.displayName;
+  } else {
+    // first sign-in: username required before the profile exists
+    el('auth-name').textContent = 'Pick a username…';
+    el('username-form').hidden = false;
+    el('username-input').focus();
+  }
+}
+
+watchAuth(refreshChip);
+
+el('auth-name').addEventListener('click', () => {
+  if (!currentUser) return;
+  el('username-form').hidden = !el('username-form').hidden;
+  if (!el('username-form').hidden) el('username-input').focus();
+});
+
+el('username-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const check = validUsername(el('username-input').value);
+  if (!check.ok) { el('username-error').textContent = check.error; return; }
+  el('username-error').textContent = '';
+  const result = await claimUsername(db, currentUser, check.name);
+  if (!result.ok) { el('username-error').textContent = result.error; return; }
+  el('username-input').value = '';
+  refreshChip(currentUser);
 });
 const fmtS = (ms) => (ms / 1000).toFixed(1);
 import { fmtOff, fmtS2 } from './format.js';
@@ -267,7 +299,7 @@ async function shareScoreCard() {
 
 el('auth-btn').addEventListener('click', async () => {
   el('auth-btn').disabled = true;
-  try { await signInGoogle(db); }
+  try { await signInGoogle(); }
   catch (err) { if (err.code !== 'auth/popup-closed-by-user') console.warn('[auth]', err.code); }
   el('auth-btn').disabled = false;
 });

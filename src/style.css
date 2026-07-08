@@ -252,3 +252,8 @@ h1 { color: var(--primary); text-shadow: var(--led-glow); }
 .auth-btn { padding: 0.4rem 1.1rem; font-size: var(--fs-small); }
 .auth-name { color: var(--accent); font-size: var(--fs-small); font-weight: 700; }
 .auth-signout { background: none; border: 1px solid var(--text-dim); color: var(--text-dim); border-radius: var(--radius-round); padding: 0.35rem 0.9rem; font: inherit; font-size: var(--fs-small); cursor: pointer; }
+
+
+/* ---- usernames ---- */
+.username-form { position: fixed; top: 3.6rem; right: 0.75rem; background: var(--surface); padding: var(--gap); border-radius: var(--radius); z-index: 20; }
+.auth-name { background: none; border: none; cursor: pointer; text-decoration: underline dotted; }
