@@ -5,6 +5,7 @@ registerSW({ immediate: true });
 
 const el = (id) => document.getElementById(id);
 const fmtS = (ms) => (ms / 1000).toFixed(1);
+import { fmtOff } from './format.js';
 let game = null;
 let shownTotal = 0;
 
@@ -20,7 +21,7 @@ function setYou(ms) {
 }
 
 function renderScore(ms) {
-  el('solo-score').innerHTML = `${Math.round(ms).toLocaleString()}<span class="timer-unit">ms</span>`;
+  el('solo-score').innerHTML = `${fmtOff(ms)}<span class="timer-unit">s</span>`;
 }
 
 function countUpScore(from, to, durationMs = 600) {
@@ -41,7 +42,7 @@ function flyDifference(deviationMs, onArrive) {
   const toRect = el('solo-score').getBoundingClientRect();
   const chip = document.createElement('span');
   chip.className = 'fly-chip';
-  chip.textContent = `+${deviationMs.toLocaleString()} ms`;
+  chip.textContent = `+${fmtOff(deviationMs)}s`;
   chip.style.left = `${fromRect.left + fromRect.width / 2}px`;
   chip.style.top = `${fromRect.bottom + 4}px`;
   document.body.appendChild(chip);
@@ -67,7 +68,7 @@ function appendResult(attempt, roundNum) {
   const li = document.createElement('li');
   li.className = 'round-row stopped';
   li.innerHTML = `<span class="row-name">R${roundNum}: ${fmtS(attempt.targetMs)}s target</span>` +
-    `<span class="row-time">${fmtS(attempt.elapsedMs)}s <span class="deviation">off by ${attempt.deviationMs} ms</span></span>`;
+    `<span class="row-time">${fmtS(attempt.elapsedMs)}s <span class="deviation">off by ${fmtOff(attempt.deviationMs)}s</span></span>`;
   el('solo-results').appendChild(li);
 }
 
@@ -91,12 +92,12 @@ function finishGame(totalMs) {
   el('solo-round').textContent = 'Done!';
   document.querySelector('.target-row').hidden = true;
   document.querySelector('.score-wrap').hidden = true;
-  el('solo-target').innerHTML = `${fmtS(totalMs)}<span class="timer-unit">s off</span>`;
+  el('solo-target').innerHTML = `${fmtOff(totalMs)}<span class="timer-unit">s off</span>`;
   el('solo-big').hidden = true;
   el('solo-msg').textContent = '';
   const total = el('solo-total');
   total.hidden = false;
-  total.textContent = `Total: ${totalMs.toLocaleString()} ms off across ${SOLO_ROUNDS} rounds — lower is better.`;
+  total.textContent = `Total: ${fmtOff(totalMs)}s off across ${SOLO_ROUNDS} rounds — lower is better.`;
   el('solo-again').hidden = false;
   el('solo-exit').hidden = false;
 }
@@ -120,7 +121,7 @@ el('solo-big').addEventListener('pointerdown', (e) => {
   } else if (result.type === 'stopped') {
     setYou(result.attempt.elapsedMs);
     appendResult(result.attempt, game.currentRound() - 1);
-    el('solo-msg').textContent = `Off by ${result.attempt.deviationMs.toLocaleString()} ms`;
+    el('solo-msg').textContent = `Off by ${fmtOff(result.attempt.deviationMs)}s`;
     btn.disabled = true;
     flyDifference(result.attempt.deviationMs, () => {
       const newTotal = shownTotal + result.attempt.deviationMs;

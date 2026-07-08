@@ -13,6 +13,7 @@ import { createKoth } from './koth.js';
 
 const el = (id) => document.getElementById(id);
 const fmt = (ms) => (ms / 1000).toFixed(1);
+import { fmtOff } from './format.js';
 let roster = [];
 let round = null;
 let match = null;
@@ -78,7 +79,7 @@ function renderRelayRows(g) {
     li.dataset.playerId = unitId;
     const progress = `${(s.attempts || []).length}/${s.members.length}`;
     let time;
-    if (s.state === 'done') time = `avg Δ ${fmt(s.avgDeviationMs)}s`;
+    if (s.state === 'done') time = `avg Δ ${fmtOff(s.avgDeviationMs)}s`;
     else if (s.state === 'dnf') time = 'DNF';
     else if (s.state === 'running') time = `${s.members[s.current]}: <span class="live-timer">0.0</span>s`;
     else if (s.state === 'between') time = `pass to ${s.members[s.current]}`;
@@ -91,7 +92,7 @@ function renderRelayRows(g) {
     el('game-msg').textContent = 'Relay! Every member takes a turn — pass the phone!';
   } else if (g.status === 'over') {
     el('game-msg').textContent = g.roundWinner
-      ? `🥇 ${g.roundWinner.name} takes the round (avg Δ ${fmt(g.roundWinner.avgDeviationMs)}s)`
+      ? `🥇 ${g.roundWinner.name} takes the round (avg Δ ${fmtOff(g.roundWinner.avgDeviationMs)}s)`
       : 'Nobody finished the relay!';
   }
 }
@@ -112,7 +113,7 @@ const tv = {
       li.className = `round-row ${s.state}`;
       li.dataset.playerId = playerId;
       const timer = s.state === 'stopped'
-        ? `${fmt(s.elapsedMs)}s <span class="deviation">Δ ${fmt(s.deviationMs)}s</span>`
+        ? `${fmt(s.elapsedMs)}s <span class="deviation">Δ ${fmtOff(s.deviationMs)}s</span>`
         : s.state === 'dnf' ? 'DNF'
         : s.state === 'running' ? `<span class="live-timer">0.0</span>s`
         : '—';
@@ -125,7 +126,7 @@ const tv = {
       el('game-msg').textContent = 'Tap to start your timer, tap again to stop it — land on the target!';
     } else if (g.status === 'over') {
       el('game-msg').textContent = g.winner
-        ? `🏆 ${g.winner.name} wins — ${fmt(g.winner.elapsedMs)}s (Δ ${fmt(g.winner.deviationMs)}s). Next round from your phones!`
+        ? `🏆 ${g.winner.name} wins — ${fmt(g.winner.elapsedMs)}s (Δ ${fmtOff(g.winner.deviationMs)}s). Next round from your phones!`
         : 'Nobody finished — next round from your phones!';
     }
   }
