@@ -2,7 +2,7 @@
 // timing it in your head IS the game. Results appear on the TV only.
 import { ref, onValue } from 'firebase/database';
 import { initFirebase } from './firebase.js';
-import { getSession, restorePlayer, joinRoom, validateName, watchPlayers } from './players.js';
+import { getSession, restorePlayer, joinRoom, validateName, watchPlayers, setupPresence } from './players.js';
 import { sendPress, sendEvent } from './engine.js';
 import { logTransition } from './session.js';
 
@@ -284,6 +284,7 @@ async function start() {
   const restored = await restorePlayer(db, room);
   if (restored) {
     me = restored;
+    setupPresence(db, room, me.playerId);
     showJoined(restored.name);
     return;
   }
@@ -314,6 +315,7 @@ async function start() {
     try {
       const joined = await joinRoom(db, room, check.name, members);
       me = joined;
+      setupPresence(db, room, me.playerId);
       showJoined(joined.name);
     } catch (err) {
       el('join-btn').disabled = false;

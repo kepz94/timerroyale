@@ -1,5 +1,5 @@
 // Player join + roster (TR-3). Phones write only their own player record.
-import { ref, get, set, update, onValue, serverTimestamp } from 'firebase/database';
+import { ref, get, set, update, onValue, onDisconnect, serverTimestamp } from 'firebase/database';
 import { logTransition } from './session.js';
 
 const NAME_MAX = 16;
@@ -50,6 +50,21 @@ export async function joinRoom(db, room, name, members = null) {
   localStorage.setItem(storageKey(room), JSON.stringify({ playerId, name }));
   logTransition('player', 'form', 'joined', `${name} (${playerId}) joined ${room}`);
   return { playerId, name };
+}
+
+/**
+ * Presence (TR-9): while the phone's RTDB socket is up, connected=true;
+ * the server flips it to false the moment the socket drops (tab closed,
+ * phone locked, Wi-Fi lost). Re-registers automatically on reconnect.
+ */
+export function setupPresence(db, room, playerId) {
+  const meRef = ref(db, `sessions/${room}/players/${playerId}`);
+  onValue(ref(db, '.info/connected'), (snap) => {
+    if (snap.val() === false) return;
+    onDisconnect(meRef).update({ connected: false, lastSeen: serverTimestamp() });
+    update(meRef, { connected: true });
+    logTransition('presence', 'offline', 'online', `player ${playerId}`);
+  });
 }
 
 /** Live roster subscription. cb receives [{playerId, name, ...}] ordered by joinedAt. */

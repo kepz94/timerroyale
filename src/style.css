@@ -144,3 +144,7 @@ h1 { font-size: var(--fs-title); letter-spacing: 0.05em; }
 /* ---- TR-12: king of the hill ---- */
 .koth-n { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
 .koth-n-btn { padding: 0.6rem 1.2rem; font-size: var(--fs-small); }
+
+/* ---- TR-9: presence ---- */
+.player-list li.offline { opacity: 0.45; border: 1px dashed var(--state-disconnected); }
+.round-row.offline .row-name::after { content: ' ⚠ offline'; color: var(--warn); font-size: var(--fs-small); font-weight: 400; }

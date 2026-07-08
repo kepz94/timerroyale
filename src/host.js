@@ -22,16 +22,25 @@ function renderPlayers(players) {
   list.innerHTML = '';
   for (const p of players) {
     const li = document.createElement('li');
-    li.textContent = p.name;
+    li.textContent = p.connected === false ? `⚠ ${p.name}` : p.name;
+    li.classList.toggle('offline', p.connected === false);
     li.dataset.playerId = p.playerId;
     list.appendChild(li);
   }
+  refreshOfflineRows();
   el('players-empty').hidden = players.length > 0;
   if (!round) {
     el('status').textContent = players.length > 0
       ? `${players.length} player${players.length === 1 ? '' : 's'} in the lobby` +
         (players.length >= 2 ? ` — ${players[0].name} can start a round` : '')
       : 'Waiting for players…';
+  }
+}
+
+function refreshOfflineRows() {
+  for (const row of document.querySelectorAll('.round-row')) {
+    const p = roster.find((r) => r.playerId === row.dataset.playerId);
+    row.classList.toggle('offline', p ? p.connected === false : false);
   }
 }
 
@@ -89,7 +98,7 @@ const tv = {
   state(g) {
     lastState = g;
     el('target-digits').innerHTML = `${fmt(g.targetMs)}<span class="timer-unit">s</span>`;
-    if (g.mode === 'relay') { renderRelayRows(g); return; }
+    if (g.mode === 'relay') { renderRelayRows(g); refreshOfflineRows(); return; }
     const rows = el('round-rows');
     rows.innerHTML = '';
     const order = g.status === 'over' && g.ranking
@@ -109,6 +118,7 @@ const tv = {
       li.innerHTML = `<span class="row-name">${medal}${s.name}</span><span class="row-time">${timer}</span>`;
       rows.appendChild(li);
     });
+    refreshOfflineRows();
     if (g.status === 'running') {
       el('game-msg').textContent = 'Tap to start your timer, tap again to stop it — land on the target!';
     } else if (g.status === 'over') {
