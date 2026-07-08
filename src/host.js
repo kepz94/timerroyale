@@ -88,6 +88,7 @@ function renderRelayRows(g) {
     li.innerHTML = `<span class="row-name">${medal}${s.name} <small>${progress}</small></span><span class="row-time">${time}</span>`;
     rows.appendChild(li);
   });
+  el('game-msg').classList.toggle('final', g.status === 'over');
   if (g.status === 'running') {
     el('game-msg').textContent = 'Relay! Every member takes a turn — pass the phone!';
   } else if (g.status === 'over') {
@@ -122,6 +123,7 @@ const tv = {
       rows.appendChild(li);
     });
     refreshOfflineRows();
+    el('game-msg').classList.toggle('final', g.status === 'over');
     if (g.status === 'running') {
       el('game-msg').textContent = 'Tap to start your timer, tap again to stop it — land on the target!';
     } else if (g.status === 'over') {
@@ -177,6 +179,7 @@ function renderMatch(m, justOut) {
     li.textContent = `${e.name} — out R${e.round}`;
     standings.appendChild(li);
   }
+  el('game-msg').classList.toggle('final', m.status === 'champion');
   if (m.status === 'champion') {
     el('game-msg').textContent = `👑 ${m.champion.name} is the last one standing!`;
   } else if (m.status === 'between') {
@@ -198,6 +201,7 @@ function renderTeamMatch(m, roundState) {
     li.textContent = `${i + 1}. ${t.name} — ${t.points} pts`;
     standings.appendChild(li);
   });
+  el('game-msg').classList.toggle('final', m.status === 'final');
   if (m.status === 'final') {
     el('game-msg').textContent = `🏆 ${m.winner.name} wins the series with ${m.winner.points} points!`;
   } else if (m.status === 'between') {
@@ -227,6 +231,7 @@ function renderKoth(m, roundState) {
     li.textContent = `${t.name} ${'👑'.repeat(t.wins)}${t.wins ? '' : ' —'} ${t.wins}/${m.n}`;
     standings.appendChild(li);
   });
+  el('game-msg').classList.toggle('final', m.status === 'king');
   if (m.status === 'king') {
     el('game-msg').textContent = `👑 ${m.king.name} is the King of the Hill!`;
   } else if (m.status === 'between' && m.roundNum > 0) {

@@ -232,3 +232,8 @@ h1 { color: var(--primary); text-shadow: var(--led-glow); }
   box-shadow: 0 2px 0 #991b1b, 0 6px 16px rgb(0 0 0 / 0.5);
 }
 .big-btn.running.your-turn { filter: drop-shadow(0 0 24px rgb(239 68 68 / 0.8)); }
+
+
+/* ---- TR-25: final score is the headline ---- */
+.final-score { color: var(--win); text-shadow: var(--led-glow-win); }
+.game-msg.final { font-size: var(--fs-title); color: var(--win); font-weight: 800; min-height: 1.3em; }

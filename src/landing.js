@@ -81,6 +81,7 @@ function appendResult(attempt, roundNum) {
 function startGame() {
   mode = 'solo';
   clearInterval(countdownTimer);
+  el('final-score').hidden = true;
   el('daily-countdown').hidden = true;
   el('daily-share').hidden = true;
   game = createSoloGame();
@@ -102,7 +103,9 @@ function finishGame(totalMs) {
   el('solo-round').textContent = 'Done!';
   document.querySelector('.target-row').hidden = true;
   document.querySelector('.score-wrap').hidden = true;
-  el('solo-target').innerHTML = `${fmtOff(totalMs)}<span class="timer-unit">s off</span>`;
+  const hero = el('final-score');
+  hero.hidden = false;
+  hero.innerHTML = `${fmtOff(totalMs)}<span class="timer-unit">s off</span>`;
   el('solo-big').hidden = true;
   el('solo-msg').textContent = '';
   const total = el('solo-total');
@@ -142,7 +145,9 @@ function showDailyResult(res) {
   el('solo-big').hidden = true;
   el('solo-msg').textContent = "You've played today — come back after midnight!";
   el('solo-round').textContent = `Daily Royale — ${res.dateKey}`;
-  el('solo-target').innerHTML = `${fmtOff(res.totalMs)}<span class="timer-unit">s off</span>`;
+  const hero = el('final-score');
+  hero.hidden = false;
+  hero.innerHTML = `${fmtOff(res.totalMs)}<span class="timer-unit">s off</span>`;
   el('solo-results').innerHTML = '';
   res.attempts.forEach((a, idx) => appendResult(a, idx + 1));
   el('solo-total').hidden = false;
@@ -158,6 +163,7 @@ function startDaily() {
   if (played) { showDailyResult(played); return; }
   mode = 'daily';
   clearInterval(countdownTimer);
+  el('final-score').hidden = true;
   el('daily-countdown').hidden = true;
   el('daily-share').hidden = true;
   game = createSoloGame({ targets: dailyTargets() });
@@ -259,6 +265,7 @@ el('join-code-form').addEventListener('submit', (e) => {
 el('solo-again').addEventListener('click', startGame);
 el('solo-exit').addEventListener('click', () => {
   clearInterval(countdownTimer);
+  el('final-score').hidden = true;
   el('daily-countdown').hidden = true;
   el('solo-panel').hidden = true;
   el('menu').hidden = false;
