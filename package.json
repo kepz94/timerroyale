@@ -1,0 +1,18 @@
+{
+  "name": "timerroyale",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A free PWA that turns a TV into the host of timer-battle party games.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  },
+  "dependencies": {
+    "firebase": "^10.12.0"
+  }
+}
