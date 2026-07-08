@@ -86,3 +86,26 @@ h1 { font-size: var(--fs-title); letter-spacing: 0.05em; }
   100% { background: var(--surface-raised); color: var(--text); transform: scale(1); }
 }
 .player-list li.flash { animation: chip-flash 600ms ease-out; }
+
+/* ---- TR-5: duel mode ---- */
+.game-panel { display: grid; gap: var(--gap); }
+.timer-digits {
+  font-size: var(--fs-hero); font-weight: 800; font-variant-numeric: tabular-nums;
+  color: var(--text); line-height: 1;
+}
+.timer-digits.warn { color: var(--warn); }
+.timer-digits.danger { color: var(--danger); }
+.duel-chips { display: flex; gap: var(--gap-lg); justify-content: center; }
+.duel-chip {
+  background: var(--surface-raised); padding: 0.75rem 2rem; border-radius: var(--radius-round);
+  font-size: var(--fs-title); font-weight: 700; border: 3px solid transparent;
+  transition: border-color var(--t-fast), transform var(--t-fast);
+}
+.duel-chip.active { border-color: var(--primary); transform: scale(1.08); }
+.duel-chip.winner { border-color: var(--win); color: var(--win); }
+.duel-chip.loser { opacity: 0.45; }
+.game-msg { font-size: var(--fs-body); color: var(--text-dim); min-height: 1.5em; }
+.turn-banner { font-size: var(--fs-title); font-weight: 800; min-height: 1.2em; }
+.big-btn.your-turn { filter: drop-shadow(0 0 24px rgb(34 197 94 / 0.8)); }
+.big-btn.waiting { filter: grayscale(0.8) brightness(0.6); }
+.big-btn[hidden] { display: none; }

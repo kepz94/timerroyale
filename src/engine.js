@@ -6,14 +6,19 @@ import { logTransition } from './session.js';
 
 const STALE_EVENT_MS = 5000;
 
-/** Phone side: append a button-press event. Fire-and-forget. */
-export function sendPress(db, room, playerId) {
+/** Phone side: append an event. Fire-and-forget. */
+export function sendEvent(db, room, playerId, type) {
   return push(ref(db, `sessions/${room}/events`), {
-    type: 'press',
+    type,
     playerId,
     clientTs: Date.now(),
     serverTs: serverTimestamp()
   });
+}
+
+/** Phone side: append a button-press event. Fire-and-forget. */
+export function sendPress(db, room, playerId) {
+  return sendEvent(db, room, playerId, 'press');
 }
 
 /**
