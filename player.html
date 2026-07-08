@@ -10,6 +10,21 @@
     <main id="app">
       <h1>TimerRoyale</h1>
       <p id="room-banner" class="subtitle"></p>
+
+      <form id="join-form" class="join-form" hidden>
+        <label for="name-input" class="join-label">Your name</label>
+        <input id="name-input" class="name-input" type="text" maxlength="16"
+               autocomplete="off" autocapitalize="words" placeholder="e.g. Kepu" />
+        <button id="join-btn" class="join-btn" type="submit">Join game</button>
+        <p id="join-error" class="join-error" role="alert"></p>
+      </form>
+
+      <div id="joined-panel" class="joined-panel" hidden>
+        <p class="joined-check">✓</p>
+        <p id="joined-name" class="joined-name"></p>
+        <p class="joined-hint">You're in — watch the TV!</p>
+      </div>
+
       <p id="status">Loading…</p>
     </main>
     <script type="module" src="/src/player.js"></script>

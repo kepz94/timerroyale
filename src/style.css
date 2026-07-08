@@ -35,3 +35,33 @@ h1 { font-size: var(--fs-title); letter-spacing: 0.05em; }
   font-size: var(--fs-body);
 }
 .players-empty { color: var(--text-dim); }
+
+/* ---- TR-3: phone join flow ---- */
+.join-form { display: grid; gap: var(--gap); justify-items: center; margin-top: var(--gap-lg); }
+.join-label { color: var(--text-dim); font-size: var(--fs-small); text-transform: uppercase; letter-spacing: 0.15em; }
+.name-input {
+  font: inherit; font-size: var(--fs-body); text-align: center;
+  background: var(--surface-raised); color: var(--text);
+  border: 2px solid transparent; border-radius: var(--radius);
+  padding: 0.75rem 1rem; width: min(80vw, 20rem); outline: none;
+  transition: border-color var(--t-fast);
+}
+.name-input:focus { border-color: var(--primary); }
+.join-btn {
+  font: inherit; font-size: var(--fs-body); font-weight: 700;
+  background: var(--primary); color: var(--primary-text);
+  border: none; border-radius: var(--radius-round);
+  padding: 0.9rem 2.5rem; cursor: pointer;
+  transition: background var(--t-fast), transform var(--t-fast);
+}
+.join-btn:active { background: var(--primary-pressed); transform: scale(0.97); }
+.join-btn:disabled { opacity: 0.6; cursor: default; }
+.join-error { color: var(--danger); min-height: 1.5em; font-size: var(--fs-body); }
+.joined-panel { display: grid; gap: 0.5rem; margin-top: var(--gap-lg); }
+.joined-check {
+  font-size: var(--fs-title); color: var(--primary);
+  background: var(--surface); width: 5rem; height: 5rem; line-height: 5rem;
+  border-radius: var(--radius-round); margin: 0 auto;
+}
+.joined-name { font-size: var(--fs-title); font-weight: 700; }
+.joined-hint { color: var(--text-dim); }
