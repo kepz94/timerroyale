@@ -20,8 +20,21 @@
 
       <section id="solo-panel" class="game-panel" hidden aria-label="Single player">
         <p id="solo-round" class="players-label">Round 1 / 5</p>
-        <p class="target-label">Target</p>
-        <p id="solo-target" class="timer-digits">--<span class="timer-unit">s</span></p>
+        <div class="target-row">
+          <div class="target-cell">
+            <p class="target-label">Target</p>
+            <p id="solo-target" class="timer-digits solo-digits">--<span class="timer-unit">s</span></p>
+          </div>
+          <div class="target-cell">
+            <p class="target-label">You</p>
+            <p id="solo-you" class="timer-digits solo-digits dim">--<span class="timer-unit">s</span></p>
+          </div>
+        </div>
+        <div class="score-wrap">
+          <p class="target-label">Total off</p>
+          <p id="solo-score" class="timer-digits solo-score">0<span class="timer-unit">ms</span></p>
+        </div>
+        <p id="solo-diff-anchor" class="solo-diff-anchor"></p>
         <button id="solo-big" class="big-btn" type="button">
           <span id="solo-big-label">TAP TO START</span>
         </button>
