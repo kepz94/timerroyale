@@ -1,16 +1,20 @@
-// Firebase initialization — config is filled in during TR-1 Firebase setup.
+// Firebase initialization (TR-1).
 // The host (TV) is the authoritative timekeeper; phones only write button-press events.
+// NOTE: web app config values are public identifiers, not secrets; data access is governed by RTDB rules.
 import { initializeApp } from 'firebase/app';
 import { getDatabase } from 'firebase/database';
 
-// TODO(TR-1): replace with real config from the Firebase console.
-export const firebaseConfig = null;
+export const firebaseConfig = {
+  apiKey: 'AIzaSyBt0tDETKkYWvHBXCK1mRN_dg-IKYNuwsc',
+  authDomain: 'timerroyale.firebaseapp.com',
+  databaseURL: 'https://timerroyale-default-rtdb.firebaseio.com',
+  projectId: 'timerroyale',
+  storageBucket: 'timerroyale.firebasestorage.app',
+  messagingSenderId: '398263163161',
+  appId: '1:398263163161:web:57c419423846729b85cd88'
+};
 
 export function initFirebase() {
-  if (!firebaseConfig) {
-    console.warn('Firebase not configured yet (TR-1 pending).');
-    return null;
-  }
   const app = initializeApp(firebaseConfig);
   return getDatabase(app);
 }
