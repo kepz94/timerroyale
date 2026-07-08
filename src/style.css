@@ -257,3 +257,36 @@ h1 { color: var(--primary); text-shadow: var(--led-glow); }
 /* ---- usernames ---- */
 .username-form { position: fixed; top: 3.6rem; right: 0.75rem; background: var(--surface); padding: var(--gap); border-radius: var(--radius); z-index: 20; }
 .auth-name { background: none; border: none; cursor: pointer; text-decoration: underline dotted; }
+
+
+/* ---- TR-38: profile tab ---- */
+.profile-panel {
+  position: fixed; inset: 0; overflow-y: auto; z-index: 30;
+  background: rgb(5 8 7 / 0.97); padding: 3.5rem 1rem 2rem;
+  display: grid; gap: var(--gap); justify-items: center; align-content: start;
+}
+.nameplate {
+  display: flex; gap: var(--gap); align-items: baseline; justify-content: space-between;
+  min-width: min(90vw, 22rem); padding: 0.9rem 1.4rem; border-radius: var(--radius);
+  border: 1px solid transparent;
+}
+.np-name { font-size: var(--fs-title); font-weight: 800; }
+.np-record { font-family: var(--font-digits); color: var(--text); }
+.banner-grid, .achievement-list { list-style: none; display: grid; gap: 0.5rem; width: min(90vw, 22rem); }
+.banner-cell { padding: 0.6rem 1rem; border-radius: var(--radius); display: flex; justify-content: space-between; align-items: baseline; cursor: pointer; border: 1px solid transparent; }
+.banner-cell.locked { opacity: 0.4; cursor: default; filter: grayscale(0.7); }
+.banner-cell.active { outline: 2px solid var(--text); }
+.banner-cell small, .achievement small { color: rgb(255 255 255 / 0.75); margin-left: 0.75rem; text-align: right; }
+.banner-name, .ach-name { font-weight: 800; }
+.achievement { background: var(--surface-raised); padding: 0.6rem 1rem; border-radius: var(--radius); display: flex; justify-content: space-between; align-items: baseline; }
+.achievement.locked { opacity: 0.55; }
+.profile-username { flex-direction: row; display: flex; gap: 0.5rem; align-items: center; }
+
+/* banner styles — LED strips */
+.banner-rookie   { background: linear-gradient(100deg, #0b120d, #14351f); border-color: var(--primary); }
+.banner-bronze   { background: linear-gradient(100deg, #1a120b, #4a2c12); border-color: #cd7f32; }
+.banner-silver   { background: linear-gradient(100deg, #101214, #3a4048); border-color: #c0c0c8; }
+.banner-gold     { background: linear-gradient(100deg, #1a1607, #574508); border-color: var(--win); }
+.banner-crown    { background: linear-gradient(100deg, #1a1607, #6b4e00, #1a1607); border-color: var(--win); box-shadow: 0 0 18px rgb(251 191 36 / 0.35); }
+.banner-bullseye { background: linear-gradient(100deg, #170808, #4a1010); border-color: var(--danger); }
+.banner-streak   { background: linear-gradient(100deg, #071217, #0e3a4a); border-color: var(--accent); }

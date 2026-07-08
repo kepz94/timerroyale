@@ -1,6 +1,8 @@
 // Landing page: single player front and center; Host a Game -> /host.html.
 import { createSoloGame, SOLO_ROUNDS } from './solo.js';
 import { watchAuth, signInGoogle, signOutUser, getProfile, claimUsername, validUsername } from './auth.js';
+import { BANNERS, ACHIEVEMENTS, tierBannerFor } from './cosmetics.js';
+import { ref as dbRef2, update as dbUpdate } from 'firebase/database';
 import { DAILY_ROUNDS, dateKey, dailyTargets, todayResult, saveResult, msToMidnight, ratingColor } from './daily.js';
 import { createGuessSoloGame, GUESS_SOLO_ROUNDS } from './guesssolo.js';
 import { sfxStart, sfxStop } from './sfx.js';
@@ -33,10 +35,72 @@ async function refreshChip(user) {
 
 watchAuth(refreshChip);
 
-el('auth-name').addEventListener('click', () => {
+el('auth-name').addEventListener('click', async () => {
   if (!currentUser) return;
-  el('username-form').hidden = !el('username-form').hidden;
-  if (!el('username-form').hidden) el('username-input').focus();
+  const profile = await getProfile(db, currentUser.uid);
+  if (!profile) { el('username-form').hidden = false; el('username-input').focus(); return; }
+  renderProfilePanel(profile);
+  el('profile-panel').hidden = false;
+});
+
+/* ---- Profile tab (TR-38) ---- */
+function earnedBanners(profile) {
+  const earned = { ...(profile.banners || {}) };
+  earned[tierBannerFor(profile.record?.w ?? 0)] = true; // tier banners auto-earn
+  earned.rookie = true;
+  return earned;
+}
+
+function renderProfilePanel(profile) {
+  const np = el('nameplate');
+  np.className = `nameplate ${BANNERS[profile.banner]?.css ?? 'banner-rookie'}`;
+  el('np-name').textContent = profile.displayName;
+  const r = profile.record || { w: 0, l: 0, d: 0 };
+  el('np-record').textContent = `${r.w}-${r.l}-${r.d}`;
+
+  const earned = earnedBanners(profile);
+  const grid = el('banner-grid');
+  grid.innerHTML = '';
+  for (const [id, def] of Object.entries(BANNERS)) {
+    const li = document.createElement('li');
+    const isEarned = !!earned[id];
+    li.className = `banner-cell ${def.css} ${isEarned ? 'earned' : 'locked'} ${profile.banner === id ? 'active' : ''}`;
+    li.innerHTML = `<span class="banner-name">${def.name}</span><small>${isEarned ? (profile.banner === id ? 'Equipped' : 'Tap to equip') : def.source}</small>`;
+    if (isEarned && profile.banner !== id) {
+      li.addEventListener('click', async () => {
+        await dbUpdate(dbRef2(db, `users/${currentUser.uid}`), { banner: id });
+        renderProfilePanel({ ...profile, banner: id });
+        refreshChip(currentUser);
+      });
+    }
+    grid.appendChild(li);
+  }
+
+  const list = el('achievement-list');
+  list.innerHTML = '';
+  for (const [id, def] of Object.entries(ACHIEVEMENTS)) {
+    const li = document.createElement('li');
+    const unlocked = !!profile.achievements?.[id];
+    li.className = `achievement ${unlocked ? 'unlocked' : 'locked'}`;
+    li.innerHTML = `<span class="ach-name">${unlocked ? '🏅' : '🔒'} ${def.name}</span>` +
+      `<small>${def.desc}${def.grantsBanner ? ` — unlocks the ${BANNERS[def.grantsBanner].name} banner` : ''}</small>`;
+    list.appendChild(li);
+  }
+}
+
+el('profile-close').addEventListener('click', () => { el('profile-panel').hidden = true; });
+
+el('profile-username-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const check = validUsername(el('profile-username-input').value);
+  if (!check.ok) { el('profile-username-error').textContent = check.error; return; }
+  el('profile-username-error').textContent = '';
+  const result = await claimUsername(db, currentUser, check.name);
+  if (!result.ok) { el('profile-username-error').textContent = result.error; return; }
+  el('profile-username-input').value = '';
+  const profile = await getProfile(db, currentUser.uid);
+  renderProfilePanel(profile);
+  refreshChip(currentUser);
 });
 
 el('username-form').addEventListener('submit', async (e) => {

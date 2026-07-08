@@ -14,6 +14,23 @@
       <button id="auth-name" class="auth-name" type="button" title="Change username" hidden></button>
       <button id="signout-btn" class="auth-signout" type="button" hidden>Sign out</button>
     </div>
+    <section id="profile-panel" class="profile-panel" hidden aria-label="Profile">
+      <div id="nameplate" class="nameplate banner-rookie">
+        <span id="np-name" class="np-name">—</span>
+        <span id="np-record" class="np-record">0-0-0</span>
+      </div>
+      <form id="profile-username-form" class="join-form profile-username">
+        <input id="profile-username-input" class="name-input" type="text" maxlength="16"
+               autocomplete="off" spellcheck="false" placeholder="Change username" />
+        <button class="join-btn" type="submit">Save</button>
+        <p id="profile-username-error" class="join-error" role="alert"></p>
+      </form>
+      <p class="players-label">Banners</p>
+      <ul id="banner-grid" class="banner-grid"></ul>
+      <p class="players-label">Achievements</p>
+      <ul id="achievement-list" class="achievement-list"></ul>
+      <button id="profile-close" class="join-btn menu-btn-alt" type="button">Close</button>
+    </section>
     <form id="username-form" class="join-form username-form" hidden>
       <label for="username-input" class="join-label">Pick your username</label>
       <input id="username-input" class="name-input" type="text" maxlength="16"
