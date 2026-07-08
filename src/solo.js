@@ -4,16 +4,35 @@
 import { logTransition } from './session.js';
 
 export const SOLO_ROUNDS = 5;
-export const SOLO_TARGET_MIN_MS = 1000;
-export const SOLO_TARGET_MAX_MS = 25000;
+
+// TR-19: banded targets so games stay short — exactly one long round (18-25s),
+// one medium round (10-18s), and three quick rounds (0.5-10s), shuffled.
+const BANDS = [
+  [18000, 25000],
+  [10000, 18000],
+  [500, 10000],
+  [500, 10000],
+  [500, 10000]
+];
+
+function rollInBand([min, max], taken) {
+  let ms;
+  do {
+    ms = Math.round((min + Math.random() * (max - min)) / 100) * 100;
+  } while (taken.has(ms));
+  taken.add(ms);
+  return ms;
+}
 
 export function rollTargets() {
-  const targets = new Set();
-  while (targets.size < SOLO_ROUNDS) {
-    const ms = SOLO_TARGET_MIN_MS + Math.random() * (SOLO_TARGET_MAX_MS - SOLO_TARGET_MIN_MS);
-    targets.add(Math.round(ms / 100) * 100);
+  const taken = new Set();
+  const targets = BANDS.map((band) => rollInBand(band, taken));
+  // Fisher-Yates shuffle so the long round can land anywhere
+  for (let i = targets.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [targets[i], targets[j]] = [targets[j], targets[i]];
   }
-  return [...targets];
+  return targets;
 }
 
 export function createSoloGame() {
