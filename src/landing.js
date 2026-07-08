@@ -31,6 +31,9 @@ function countUpScore(from, to, durationMs = 600) {
     if (p < 1) requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
+  // rAF halts when the page is hidden (phone lock, app switch) — guarantee
+  // the final value lands no matter what.
+  setTimeout(() => renderScore(to), durationMs + 100);
 }
 
 function flyDifference(deviationMs, onArrive) {
@@ -52,6 +55,7 @@ function flyDifference(deviationMs, onArrive) {
 }
 
 function renderRoundStart() {
+  renderScore(shownTotal); // re-sync in case an animation was interrupted
   el('solo-round').textContent = `Round ${game.currentRound()} / ${SOLO_ROUNDS}`;
   el('solo-target').innerHTML = `${fmtS(game.currentTargetMs())}<span class="timer-unit">s</span>`;
   setYou(null);
