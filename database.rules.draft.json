@@ -1,0 +1,36 @@
+{
+  "//": "DRAFT for TR-34 / ADR-002 — review and publish in the Firebase console (kepu). Not auto-applied.",
+  "rules": {
+    "sessions":   { ".read": true, ".write": true },
+
+    "users": {
+      "$uid": {
+        ".read": true,
+        ".write": "auth != null && auth.uid === $uid",
+        "record": { ".validate": "newData.hasChildren(['w','l','d'])" }
+      }
+    },
+
+    "usernames": {
+      "$key": {
+        ".read": true,
+        ".write": "auth != null && (newData.val() === auth.uid || (data.val() === auth.uid && !newData.exists()))"
+      }
+    },
+
+    "userMatches": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+
+    "matches": {
+      ".read": true,
+      "$mid": {
+        ".write": "auth != null && ( (!data.exists() && newData.child('host/uid').val() === auth.uid && newData.child('status').val() === 'pending' && !newData.child('challenger').exists()) || (data.child('status').val() === 'pending' && !data.child('challenger').exists() && newData.child('challenger/uid').val() === auth.uid && auth.uid !== data.child('host/uid').val() && newData.child('host/uid').val() === data.child('host/uid').val()) || (data.child('status').val() === 'pending' && data.child('challenger/uid').val() === auth.uid && newData.child('status').val() === 'complete' && newData.child('host/uid').val() === data.child('host/uid').val()) )",
+        ".validate": "newData.hasChildren(['mode','status','host'])"
+      }
+    }
+  }
+}
