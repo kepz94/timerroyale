@@ -4,11 +4,13 @@ import { initFirebase } from './firebase.js';
 import { createSession, playerJoinUrl, logTransition } from './session.js';
 import { watchPlayers } from './players.js';
 import { consumeEvents } from './engine.js';
-import { createDuel } from './duel.js';
+import { createRound, randomTarget } from './round.js';
 
 const el = (id) => document.getElementById(id);
+const fmt = (ms) => (ms / 1000).toFixed(1);
 let roster = [];
-let duel = null;
+let round = null;
+let rafId = null;
 
 function renderPlayers(players) {
   roster = players;
@@ -21,10 +23,10 @@ function renderPlayers(players) {
     list.appendChild(li);
   }
   el('players-empty').hidden = players.length > 0;
-  if (!duel) {
+  if (!round) {
     el('status').textContent = players.length > 0
       ? `${players.length} player${players.length === 1 ? '' : 's'} in the lobby` +
-        (players.length >= 2 ? ` — ${players[0].name} can start the duel` : '')
+        (players.length >= 2 ? ` — ${players[0].name} can start a round` : '')
       : 'Waiting for players…';
   }
 }
@@ -44,43 +46,60 @@ function showGameView(show) {
   document.querySelector('.players-panel').hidden = show;
 }
 
+// Live TV rendering. Running timers are display-only (host clock baseline);
+// scoring always comes from the round engine's client-clock deltas.
+let lastState = null;
 const tv = {
-  tick(remainingMs) {
-    const d = el('timer-digits');
-    d.textContent = (remainingMs / 1000).toFixed(1);
-    d.classList.toggle('warn', remainingMs <= 10000 && remainingMs > 5000);
-    d.classList.toggle('danger', remainingMs <= 5000);
-  },
   state(g) {
-    const chips = el('duel-chips');
-    chips.innerHTML = '';
-    for (const p of g.duelists) {
-      const div = document.createElement('div');
-      div.className = 'duel-chip';
-      div.textContent = p.name;
-      if (g.status === 'playing' && p.playerId === g.activePlayerId) div.classList.add('active');
-      if (g.status === 'over' && p.playerId === g.winner?.playerId) div.classList.add('winner');
-      if (g.status === 'over' && p.playerId === g.loser?.playerId) div.classList.add('loser');
-      chips.appendChild(div);
-    }
-    if (g.status === 'playing') {
-      const active = g.duelists.find((p) => p.playerId === g.activePlayerId);
-      el('game-msg').textContent = `${active.name} — press before it hits zero!`;
+    lastState = g;
+    el('target-digits').innerHTML = `${fmt(g.targetMs)}<span class="timer-unit">s</span>`;
+    const rows = el('round-rows');
+    rows.innerHTML = '';
+    const order = g.status === 'over' && g.ranking
+      ? g.ranking.concat(Object.keys(g.players).filter((id) => !g.ranking.includes(id)))
+      : Object.keys(g.players);
+    order.forEach((playerId, i) => {
+      const s = g.players[playerId];
+      const li = document.createElement('li');
+      li.className = `round-row ${s.state}`;
+      li.dataset.playerId = playerId;
+      const timer = s.state === 'stopped'
+        ? `${fmt(s.elapsedMs)}s <span class="deviation">Δ ${fmt(s.deviationMs)}s</span>`
+        : s.state === 'dnf' ? 'DNF'
+        : s.state === 'running' ? `<span class="live-timer">0.0</span>s`
+        : '—';
+      const medal = g.status === 'over' && g.ranking?.[0] === playerId ? '🏆 ' : '';
+      li.innerHTML = `<span class="row-name">${medal}${s.name}</span><span class="row-time">${timer}</span>`;
+      rows.appendChild(li);
+    });
+    if (g.status === 'running') {
+      el('game-msg').textContent = 'Tap to start your timer, tap again to stop it — land on the target!';
     } else if (g.status === 'over') {
-      el('timer-digits').textContent = '0.0';
-      el('game-msg').textContent = `🏆 ${g.winner.name} wins! Rematch from your phones.`;
+      el('game-msg').textContent = g.winner
+        ? `🏆 ${g.winner.name} wins — ${fmt(g.winner.elapsedMs)}s (Δ ${fmt(g.winner.deviationMs)}s). Next round from your phones!`
+        : 'Nobody finished — next round from your phones!';
     }
   }
 };
 
-function startDuel(trigger) {
-  const duelists = roster.slice(0, 2).map(({ playerId, name }) => ({ playerId, name }));
-  const startIdx = duel ? 1 - duel.getStartIdx() : 0; // rematch swaps who starts
-  duel = createDuel({ db: window.__db, room: window.__room, duelists, startIdx, onTv: tv });
+function tickLiveTimers() {
+  if (lastState?.status === 'running') {
+    for (const [playerId, s] of Object.entries(lastState.players)) {
+      if (s.state !== 'running') continue;
+      const span = document.querySelector(`.round-row[data-player-id="${playerId}"] .live-timer`);
+      if (span) span.textContent = fmt(Date.now() - s.startHostTs);
+    }
+  }
+  rafId = requestAnimationFrame(tickLiveTimers);
+}
+
+function startRound(trigger) {
+  const players = roster.map(({ playerId, name }) => ({ playerId, name }));
+  round = createRound({ db: window.__db, room: window.__room, players, targetMs: randomTarget(), onTv: tv });
   showGameView(true);
-  el('status').textContent = 'Duel in progress';
-  duel.begin();
-  logTransition('host-ui', 'lobby-open', 'duel-started', trigger);
+  el('status').textContent = 'Round in progress';
+  round.begin();
+  logTransition('host-ui', 'lobby-open', 'round-started', trigger);
 }
 
 async function startLobby() {
@@ -107,22 +126,19 @@ async function startLobby() {
     logTransition('host-ui', 'creating', 'lobby-open', `room ${code} displayed`);
 
     watchPlayers(db, code, renderPlayers);
+    tickLiveTimers();
 
     window.__pressLog = [];
     consumeEvents(db, code, (ev) => {
       if (ev.type === 'press') {
         window.__pressLog.push({ eventId: ev.eventId, playerId: ev.playerId, latencyMs: ev.latencyMs });
       }
-      if (ev.type === 'press' && !duel) { flashChip(ev.playerId); return; }
-      if (ev.type === 'start' && !duel && roster.length >= 2 && ev.playerId === roster[0].playerId) {
-        startDuel(`start event ${ev.eventId} from captain`);
+      if (ev.type === 'press' && !round) { flashChip(ev.playerId); return; }
+      if (ev.type === 'start' && (!round || round.isOver()) && roster.length >= 2 && ev.playerId === roster[0].playerId) {
+        startRound(`start event ${ev.eventId} from captain`);
         return;
       }
-      if (ev.type === 'rematch' && duel?.isOver()) {
-        startDuel(`rematch event ${ev.eventId} from ${ev.playerId}`);
-        return;
-      }
-      duel?.handleEvent(ev);
+      round?.handleEvent(ev);
     });
   } catch (err) {
     el('status').textContent = `Could not create room: ${err.message}`;

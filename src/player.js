@@ -1,4 +1,5 @@
-// Player (phone) entry point — a dumb remote that only sends button-press events.
+// Player (phone) entry point — a blind remote. It never shows elapsed time:
+// timing it in your head IS the game. Results appear on the TV only.
 import { ref, onValue } from 'firebase/database';
 import { initFirebase } from './firebase.js';
 import { getSession, restorePlayer, joinRoom, validateName, watchPlayers } from './players.js';
@@ -22,34 +23,57 @@ function renderGame() {
   if (!me) return;
   const banner = el('turn-banner');
   const btn = el('big-btn');
+  const label = el('big-btn-label');
   const startBtn = el('start-btn');
-  const rematchBtn = el('rematch-btn');
   const hint = el('joined-hint');
 
-  const playing = game?.status === 'playing';
+  const running = game?.status === 'running';
   const over = game?.status === 'over';
-  const iAmDuelist = !!game?.duelists?.some((p) => p.playerId === me.playerId);
-  const myTurn = playing && game.activePlayerId === me.playerId;
+  const mySlot = game?.players?.[me.playerId] ?? null;
 
-  startBtn.hidden = !(isCaptain() && !playing && !over && currentPlayers.length >= 2);
-  rematchBtn.hidden = !(over && iAmDuelist);
-  btn.hidden = (playing || over) && !iAmDuelist;
+  startBtn.hidden = !(isCaptain() && !running && currentPlayers.length >= 2);
+  startBtn.textContent = over ? 'Next round' : 'Start round';
+  el('rematch-btn').hidden = true; // superseded by start/next-round; kept for markup stability
 
-  btn.classList.toggle('your-turn', myTurn);
-  btn.classList.toggle('waiting', playing && iAmDuelist && !myTurn);
-  btn.disabled = playing && iAmDuelist && !myTurn;
-
-  if (!game || (!playing && !over)) {
-    banner.textContent = '';
-    hint.textContent = startBtn.hidden ? "You're in — watch the TV!" : 'Everyone in? Start the duel!';
-  } else if (playing) {
-    banner.textContent = iAmDuelist ? (myTurn ? 'YOUR TURN!' : 'Wait…') : 'Spectating';
-    hint.textContent = '';
+  if (running && mySlot) {
+    const target = (game.targetMs / 1000).toFixed(1);
+    if (mySlot.state === 'waiting') {
+      banner.textContent = `Target: ${target}s`;
+      label.textContent = 'TAP TO START';
+      btn.disabled = false;
+      hint.textContent = 'Tap again when you think you hit it. No peeking — the TV has the timers.';
+    } else if (mySlot.state === 'running') {
+      banner.textContent = `Target: ${target}s`;
+      label.textContent = 'TAP TO STOP';
+      btn.disabled = false;
+      hint.textContent = '';
+    } else if (mySlot.state === 'stopped') {
+      banner.textContent = 'Stopped!';
+      label.textContent = '···';
+      btn.disabled = true;
+      hint.textContent = 'Watch the TV for the reveal.';
+    } else { // dnf
+      banner.textContent = 'Too slow — DNF';
+      label.textContent = '···';
+      btn.disabled = true;
+      hint.textContent = '';
+    }
+    btn.classList.toggle('your-turn', mySlot.state === 'waiting' || mySlot.state === 'running');
+    btn.classList.toggle('waiting', mySlot.state === 'stopped' || mySlot.state === 'dnf');
   } else if (over) {
-    if (me.playerId === game.winner?.playerId) banner.textContent = '🏆 You win!';
-    else if (me.playerId === game.loser?.playerId) banner.textContent = "Time's up — you lose!";
-    else banner.textContent = `${game.winner?.name} wins`;
-    hint.textContent = '';
+    const iWon = game.winner?.playerId === me.playerId;
+    const mine = game.players?.[me.playerId];
+    banner.textContent = iWon ? '🏆 You won the round!' : (mine?.state === 'dnf' ? 'DNF that round' : 'Round over');
+    label.textContent = 'PRESS';
+    btn.disabled = true;
+    btn.classList.remove('your-turn', 'waiting');
+    hint.textContent = startBtn.hidden ? 'Results are on the TV.' : 'Results are on the TV — hit Next round when ready.';
+  } else {
+    banner.textContent = '';
+    label.textContent = 'PRESS';
+    btn.disabled = false;
+    btn.classList.remove('your-turn', 'waiting');
+    hint.textContent = startBtn.hidden ? "You're in — watch the TV!" : 'Everyone in? Start a round!';
   }
 }
 
@@ -72,10 +96,6 @@ function wireButtons() {
   el('start-btn').addEventListener('click', () => {
     sendEvent(dbRef, room, me.playerId, 'start');
     logTransition('player-ui', 'lobby', 'start-sent', me.playerId);
-  });
-  el('rematch-btn').addEventListener('click', () => {
-    sendEvent(dbRef, room, me.playerId, 'rematch');
-    logTransition('player-ui', 'over', 'rematch-sent', me.playerId);
   });
 }
 

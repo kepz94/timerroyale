@@ -109,3 +109,21 @@ h1 { font-size: var(--fs-title); letter-spacing: 0.05em; }
 .big-btn.your-turn { filter: drop-shadow(0 0 24px rgb(34 197 94 / 0.8)); }
 .big-btn.waiting { filter: grayscale(0.8) brightness(0.6); }
 .big-btn[hidden] { display: none; }
+
+/* ---- TR-5 corrected: target-time round ---- */
+.target-label { color: var(--text-dim); font-size: var(--fs-small); text-transform: uppercase; letter-spacing: 0.2em; }
+.timer-unit { font-size: 0.4em; color: var(--text-dim); }
+.round-rows { list-style: none; display: grid; gap: 0.5rem; max-width: 34rem; margin: 0 auto; width: 100%; }
+.round-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  background: var(--surface-raised); border-radius: var(--radius);
+  padding: 0.6rem 1.25rem; font-size: var(--fs-body);
+  border-left: 4px solid transparent;
+}
+.round-row.running { border-left-color: var(--accent); }
+.round-row.stopped { border-left-color: var(--primary); }
+.round-row.dnf { border-left-color: var(--danger); opacity: 0.5; }
+.row-name { font-weight: 700; }
+.row-time { font-variant-numeric: tabular-nums; }
+.deviation { color: var(--text-dim); font-size: var(--fs-small); margin-left: 0.5rem; }
+#big-btn-label { pointer-events: none; }
