@@ -1,0 +1,44 @@
+/* TimerRoyale design tokens (v0.1.0) — single source of truth for all styling.
+   Restyle the entire app by editing this file only. */
+:root {
+  /* Palette */
+  --bg: #0d0f14;            /* near-black stage, TV-friendly */
+  --surface: #171a22;       /* cards, panels */
+  --surface-raised: #212633;
+  --text: #f5f6f8;
+  --text-dim: #9aa3b2;
+
+  --primary: #22c55e;       /* the green button */
+  --primary-pressed: #16a34a;
+  --primary-text: #06130a;
+
+  --danger: #ef4444;        /* elimination, time's up */
+  --warn: #f59e0b;          /* low-time warning */
+  --win: #fbbf24;           /* winner gold */
+  --accent: #38bdf8;        /* joins, info, links */
+
+  /* Typography — big and readable from a couch */
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --fs-hero: clamp(3rem, 10vw, 7rem);     /* TV timer digits */
+  --fs-title: clamp(2rem, 5vw, 3.5rem);
+  --fs-body: 1.125rem;
+  --fs-small: 0.875rem;
+
+  /* Shape & space */
+  --radius: 16px;
+  --radius-round: 999px;
+  --gap: 1rem;
+  --gap-lg: 2rem;
+
+  /* The big button (phone) */
+  --btn-size: min(70vw, 70vh);
+
+  /* Motion */
+  --t-fast: 120ms ease-out;
+  --t-normal: 240ms ease;
+
+  /* State colors for player status (TR-8 will consume these) */
+  --state-alive: var(--primary);
+  --state-eliminated: var(--danger);
+  --state-disconnected: var(--text-dim);
+}
