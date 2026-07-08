@@ -7,7 +7,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        host: resolve(__dirname, 'index.html'),
+        landing: resolve(__dirname, 'index.html'),
+        host: resolve(__dirname, 'host.html'),
         player: resolve(__dirname, 'player.html')
       }
     }

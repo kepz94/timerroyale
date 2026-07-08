@@ -187,3 +187,9 @@ h1 { color: var(--primary); text-shadow: var(--led-glow); }
 
 /* ---- TR-11: share ---- */
 .share-btn { background: var(--surface-raised); color: var(--primary); border: 1px solid var(--primary); }
+
+/* ---- TR-13: landing + solo ---- */
+.menu { display: flex; gap: var(--gap); justify-content: center; flex-wrap: wrap; margin-top: var(--gap); }
+.menu-btn { min-width: 14rem; text-align: center; text-decoration: none; display: inline-block; }
+.menu-btn-alt { background: var(--surface-raised); color: var(--primary); border: 1px solid var(--primary); }
+.solo-total { font-size: var(--fs-body); color: var(--text); }

@@ -3,44 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TimerRoyale — Host</title>
+    <title>TimerRoyale</title>
     <meta name="theme-color" content="#050807" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
-  <body class="host">
-    <main id="app" class="lobby">
+  <body class="landing">
+    <main id="app">
       <h1>TimerRoyale</h1>
-      <p class="subtitle">Scan to join the game</p>
+      <p class="subtitle">Land on the target — blind.</p>
 
-      <section class="join-panel" aria-label="How to join">
-        <div class="qr-card">
-          <canvas id="qr"></canvas>
-        </div>
-        <div class="room-info">
-          <p class="room-label">Room code</p>
-          <p id="room-code" class="room-code">····</p>
-          <p id="join-url" class="join-url"></p>
-        </div>
-      </section>
+      <div id="menu" class="menu">
+        <button id="solo-btn" class="join-btn menu-btn" type="button">Single Player</button>
+        <a id="host-link" class="join-btn menu-btn menu-btn-alt" href="/host.html">Host a Game</a>
+      </div>
 
-      <section class="players-panel" aria-label="Players">
-        <p class="players-label">Players</p>
-        <ul id="player-list" class="player-list"></ul>
-        <p id="players-empty" class="players-empty">No one has joined yet</p>
-      </section>
-
-      <section id="game-panel" class="game-panel" hidden aria-label="Game">
-        <p id="match-banner" class="match-banner"></p>
+      <section id="solo-panel" class="game-panel" hidden aria-label="Single player">
+        <p id="solo-round" class="players-label">Round 1 / 5</p>
         <p class="target-label">Target</p>
-        <p id="target-digits" class="timer-digits">0.0<span class="timer-unit">s</span></p>
-        <ul id="round-rows" class="round-rows"></ul>
-        <ul id="standings" class="standings"></ul>
-        <p id="game-msg" class="game-msg"></p>
+        <p id="solo-target" class="timer-digits">--<span class="timer-unit">s</span></p>
+        <button id="solo-big" class="big-btn" type="button">
+          <span id="solo-big-label">TAP TO START</span>
+        </button>
+        <p id="solo-msg" class="game-msg"></p>
+        <ul id="solo-results" class="round-rows"></ul>
+        <p id="solo-total" class="solo-total" hidden></p>
+        <div class="menu">
+          <button id="solo-again" class="join-btn" type="button" hidden>Play again</button>
+          <button id="solo-exit" class="join-btn menu-btn-alt" type="button" hidden>Menu</button>
+        </div>
       </section>
-
-      <p id="status">Creating room…</p>
     </main>
-    <script type="module" src="/src/host.js"></script>
+    <script type="module" src="/src/landing.js"></script>
   </body>
 </html>
