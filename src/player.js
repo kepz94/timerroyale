@@ -276,11 +276,17 @@ function wireButtons() {
       throw new Error('no web share');
     } catch (err) {
       if (err.name === 'AbortError') return; // user closed the sheet
-      await navigator.clipboard.writeText(text);
-      btn.dataset.state = 'copied';
-      btn.textContent = 'Copied!';
-      setTimeout(() => { delete btn.dataset.state; refreshShareBtn(); }, 2000);
-      logTransition('player-ui', 'result', 'copied-fallback', 'clipboard');
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.dataset.state = 'copied';
+        btn.textContent = 'Copied!';
+        setTimeout(() => { delete btn.dataset.state; refreshShareBtn(); }, 2000);
+        logTransition('player-ui', 'result', 'copied-fallback', 'clipboard');
+      } catch (clipErr) {
+        // Last resort: let the user copy manually.
+        window.prompt('Copy your result:', text);
+        logTransition('player-ui', 'result', 'manual-copy-fallback', clipErr.name);
+      }
     }
   });
   el('teams-btn').addEventListener('click', () => {
