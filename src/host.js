@@ -1,6 +1,8 @@
 // Host (TV) entry point — owns all game state and timing.
 import QRCode from 'qrcode';
+import { registerSW } from 'virtual:pwa-register';
 import { initFirebase } from './firebase.js';
+registerSW({ immediate: true });
 import { createSession, playerJoinUrl, logTransition } from './session.js';
 import { watchPlayers } from './players.js';
 import { consumeEvents } from './engine.js';

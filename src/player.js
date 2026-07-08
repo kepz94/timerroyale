@@ -1,7 +1,9 @@
 // Player (phone) entry point — a blind remote. It never shows elapsed time:
 // timing it in your head IS the game. Results appear on the TV only.
 import { ref, onValue } from 'firebase/database';
+import { registerSW } from 'virtual:pwa-register';
 import { initFirebase } from './firebase.js';
+registerSW({ immediate: true });
 import { getSession, restorePlayer, joinRoom, validateName, watchPlayers, setupPresence } from './players.js';
 import { sendPress, sendEvent } from './engine.js';
 import { logTransition } from './session.js';
