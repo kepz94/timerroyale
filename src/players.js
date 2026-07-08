@@ -59,11 +59,26 @@ export async function joinRoom(db, room, name, members = null) {
  */
 export function setupPresence(db, room, playerId) {
   const meRef = ref(db, `sessions/${room}/players/${playerId}`);
+  let socketUp = false;
   onValue(ref(db, '.info/connected'), (snap) => {
-    if (snap.val() === false) return;
+    socketUp = snap.val() === true;
+    if (!socketUp) return;
     onDisconnect(meRef).update({ connected: false, lastSeen: serverTimestamp() });
     update(meRef, { connected: true });
     logTransition('presence', 'offline', 'online', `player ${playerId}`);
+  });
+  // Self-heal: if something else flips our flag to false while our socket is
+  // actually up (e.g. a second device briefly held this slot), correct it.
+  onValue(ref(db, `sessions/${room}/players/${playerId}/connected`), (snap) => {
+    if (snap.val() === false && socketUp) {
+      update(meRef, { connected: true });
+      logTransition('presence', 'clobbered', 'self-healed', `player ${playerId}`);
+    }
+  });
+  // Instant offline on tab close/navigation (faster than socket timeout).
+  window.addEventListener('pagehide', () => {
+    const url = `https://timerroyale-default-rtdb.firebaseio.com/sessions/${room}/players/${playerId}/connected.json?x-http-method-override=PUT`;
+    navigator.sendBeacon(url, 'false');
   });
 }
 
