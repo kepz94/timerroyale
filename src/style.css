@@ -65,3 +65,24 @@ h1 { font-size: var(--fs-title); letter-spacing: 0.05em; }
 }
 .joined-name { font-size: var(--fs-title); font-weight: 700; }
 .joined-hint { color: var(--text-dim); }
+
+/* ---- TR-4: big button + press feedback ---- */
+.big-btn {
+  width: var(--btn-size); height: var(--btn-size);
+  border-radius: var(--radius-round); border: none; cursor: pointer;
+  background: radial-gradient(circle at 35% 30%, #34d97b, var(--primary) 60%, var(--primary-pressed));
+  color: var(--primary-text); font: inherit; font-size: var(--fs-title); font-weight: 800;
+  letter-spacing: 0.1em; margin: var(--gap) auto;
+  box-shadow: 0 10px 0 var(--primary-pressed), 0 16px 32px rgb(0 0 0 / 0.5);
+  transition: transform var(--t-fast), box-shadow var(--t-fast);
+  touch-action: manipulation; user-select: none; -webkit-user-select: none;
+}
+.big-btn.pressed, .big-btn:active {
+  transform: translateY(8px);
+  box-shadow: 0 2px 0 var(--primary-pressed), 0 6px 16px rgb(0 0 0 / 0.5);
+}
+@keyframes chip-flash {
+  0% { background: var(--primary); color: var(--primary-text); transform: scale(1.15); }
+  100% { background: var(--surface-raised); color: var(--text); transform: scale(1); }
+}
+.player-list li.flash { animation: chip-flash 600ms ease-out; }

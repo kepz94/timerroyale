@@ -1,6 +1,7 @@
 // Player (phone) entry point — a dumb remote that only sends button-press events.
 import { initFirebase } from './firebase.js';
 import { getSession, restorePlayer, joinRoom, validateName, watchPlayers } from './players.js';
+import { sendPress } from './engine.js';
 import { logTransition } from './session.js';
 
 const el = (id) => document.getElementById(id);
@@ -8,6 +9,20 @@ const params = new URLSearchParams(location.search);
 const room = (params.get('room') || '').toUpperCase();
 
 let currentPlayers = [];
+let me = null;
+let dbRef = null;
+
+function wireBigButton() {
+  const btn = el('big-btn');
+  const press = (e) => {
+    e.preventDefault();
+    if (!me || !dbRef) return;
+    btn.classList.add('pressed');
+    setTimeout(() => btn.classList.remove('pressed'), 150);
+    sendPress(dbRef, room, me.playerId);
+  };
+  btn.addEventListener('pointerdown', press);
+}
 
 function showJoined(name) {
   el('join-form').hidden = true;
@@ -36,8 +51,12 @@ async function start() {
   }
 
   // Refresh restore path
+  dbRef = db;
+  wireBigButton();
+
   const restored = await restorePlayer(db, room);
   if (restored) {
+    me = restored;
     showJoined(restored.name);
     return;
   }
@@ -57,8 +76,9 @@ async function start() {
     el('join-error').textContent = '';
     el('join-btn').disabled = true;
     try {
-      const { name } = await joinRoom(db, room, check.name);
-      showJoined(name);
+      const joined = await joinRoom(db, room, check.name);
+      me = joined;
+      showJoined(joined.name);
     } catch (err) {
       el('join-btn').disabled = false;
       el('join-error').textContent = `Couldn't join: ${err.message}`;

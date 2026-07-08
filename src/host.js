@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { initFirebase } from './firebase.js';
 import { createSession, playerJoinUrl, logTransition } from './session.js';
 import { watchPlayers } from './players.js';
+import { consumeEvents } from './engine.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -43,6 +44,21 @@ async function startLobby() {
     logTransition('host-ui', 'creating', 'lobby-open', `room ${code} displayed`);
 
     watchPlayers(db, code, renderPlayers);
+
+    // TR-4: react to phone button presses (lobby demo = flash the presser's chip)
+    window.__pressLog = [];
+    consumeEvents(db, code, (ev) => {
+      if (ev.type !== 'press') return;
+      logTransition('host-ui', 'lobby-open', 'press-received',
+        `event ${ev.eventId} from ${ev.playerId} (latency ${ev.latencyMs}ms)`);
+      window.__pressLog.push({ eventId: ev.eventId, playerId: ev.playerId, latencyMs: ev.latencyMs });
+      const chip = document.querySelector(`#player-list li[data-player-id="${ev.playerId}"]`);
+      if (chip) {
+        chip.classList.remove('flash');
+        void chip.offsetWidth; // restart animation
+        chip.classList.add('flash');
+      }
+    });
   } catch (err) {
     el('status').textContent = `Could not create room: ${err.message}`;
     logTransition('host-ui', 'creating', 'error', err.message);
