@@ -208,3 +208,7 @@ h1 { color: var(--primary); text-shadow: var(--led-glow); }
   transform: translate(0, 0) scale(1); opacity: 1;
   transition: transform 700ms cubic-bezier(0.5, -0.2, 0.4, 1), opacity 700ms ease-in;
 }
+
+
+/* ---- TR-15: join by code ---- */
+.code-input { font-family: var(--font-alnum); text-transform: uppercase; letter-spacing: 0.3em; width: 10rem; }

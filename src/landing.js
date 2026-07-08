@@ -103,6 +103,20 @@ function finishGame(totalMs) {
 }
 
 el('solo-btn').addEventListener('click', startGame);
+el('join-game-btn').addEventListener('click', () => {
+  const f = el('join-code-form');
+  f.hidden = !f.hidden;
+  if (!f.hidden) el('code-input').focus();
+});
+el('join-code-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const code = el('code-input').value.trim().toUpperCase();
+  if (!/^[A-Z2-9]{4}$/.test(code)) {
+    el('code-error').textContent = 'Codes are 4 letters/numbers — check the TV.';
+    return;
+  }
+  location.href = `/player.html?room=${code}`;
+});
 el('solo-again').addEventListener('click', startGame);
 el('solo-exit').addEventListener('click', () => {
   el('solo-panel').hidden = true;

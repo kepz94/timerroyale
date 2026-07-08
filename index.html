@@ -15,8 +15,17 @@
 
       <div id="menu" class="menu">
         <button id="solo-btn" class="join-btn menu-btn" type="button">Single Player</button>
+        <button id="join-game-btn" class="join-btn menu-btn menu-btn-alt" type="button">Join a Game</button>
         <a id="host-link" class="join-btn menu-btn menu-btn-alt" href="/host.html">Host a Game</a>
       </div>
+
+      <form id="join-code-form" class="join-form" hidden>
+        <label for="code-input" class="join-label">Room code (on the TV)</label>
+        <input id="code-input" class="name-input code-input" type="text" maxlength="4"
+               autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD" />
+        <button class="join-btn" type="submit">Join</button>
+        <p id="code-error" class="join-error" role="alert"></p>
+      </form>
 
       <section id="solo-panel" class="game-panel" hidden aria-label="Single player">
         <p id="solo-round" class="players-label">Round 1 / 5</p>
