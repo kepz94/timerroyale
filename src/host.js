@@ -12,11 +12,10 @@ import { createTeamMatch } from './teammatch.js';
 import { createKoth } from './koth.js';
 import { createGuessRound, randomGuessTarget } from './guess.js';
 import { sfxStart, sfxStop } from './sfx.js';
-import { fmtS2 } from './format.js';
+import { fmtOff, fmtS2 } from './format.js';
 
 const el = (id) => document.getElementById(id);
 const fmt = (ms) => (ms / 1000).toFixed(1);
-import { fmtOff, fmtS2 } from './format.js';
 let roster = [];
 let round = null;
 let match = null;
