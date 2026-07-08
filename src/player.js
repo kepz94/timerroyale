@@ -6,6 +6,7 @@ import { initFirebase } from './firebase.js';
 registerSW({ immediate: true });
 import { getSession, restorePlayer, joinRoom, validateName, watchPlayers, setupPresence } from './players.js';
 import { sendPress, sendEvent } from './engine.js';
+import { sfxStart, sfxStop } from './sfx.js';
 import { logTransition } from './session.js';
 
 const el = (id) => document.getElementById(id);
@@ -256,6 +257,11 @@ function wireButtons() {
   el('big-btn').addEventListener('pointerdown', (e) => {
     e.preventDefault();
     if (!me || !dbRef || el('big-btn').disabled) return;
+    // Which way is this press? Look at my current slot state.
+    const slot = game?.mode === 'relay' ? game.units?.[me.playerId]
+               : game?.mode === 'target' ? game.players?.[me.playerId] : null;
+    if (slot?.state === 'running') sfxStop();
+    else sfxStart();
     el('big-btn').classList.add('pressed');
     setTimeout(() => el('big-btn').classList.remove('pressed'), 150);
     sendPress(dbRef, room, me.playerId);

@@ -7,6 +7,7 @@ registerSW({ immediate: true });
 const el = (id) => document.getElementById(id);
 const fmtS = (ms) => (ms / 1000).toFixed(1);
 import { fmtOff, fmtS2 } from './format.js';
+import { sfxStart, sfxStop } from './sfx.js';
 let game = null;
 let shownTotal = 0;
 let mode = 'solo'; // solo | daily
@@ -278,10 +279,12 @@ el('solo-big').addEventListener('pointerdown', (e) => {
   setTimeout(() => btn.classList.remove('pressed'), 150);
   const result = game.press();
   if (result.type === 'started') {
+    sfxStart();
     el('solo-big').classList.add('running');
     el('solo-big-label').textContent = 'TAP TO STOP';
     el('solo-msg').textContent = '';
   } else if (result.type === 'stopped') {
+    sfxStop();
     el('solo-big').classList.remove('running');
     setYou(result.attempt.elapsedMs);
     appendResult(result.attempt, game.currentRound() - 1);
@@ -294,6 +297,7 @@ el('solo-big').addEventListener('pointerdown', (e) => {
       setTimeout(() => { btn.disabled = false; renderRoundStart(); }, 700);
     });
   } else if (result.type === 'finished') {
+    sfxStop();
     el('solo-big').classList.remove('running');
     setYou(result.attempt.elapsedMs);
     appendResult(result.attempt, SOLO_ROUNDS);
