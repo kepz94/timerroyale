@@ -1,13 +1,14 @@
 // Landing page: single player front and center; Host a Game -> /host.html.
 import { createSoloGame, SOLO_ROUNDS } from './solo.js';
 import { DAILY_ROUNDS, dateKey, dailyTargets, todayResult, saveResult, msToMidnight, ratingColor } from './daily.js';
+import { createGuessSoloGame, GUESS_SOLO_ROUNDS } from './guesssolo.js';
+import { sfxStart, sfxStop } from './sfx.js';
 import { registerSW } from 'virtual:pwa-register';
 registerSW({ immediate: true });
 
 const el = (id) => document.getElementById(id);
 const fmtS = (ms) => (ms / 1000).toFixed(1);
 import { fmtOff, fmtS2 } from './format.js';
-import { sfxStart, sfxStop } from './sfx.js';
 let game = null;
 let shownTotal = 0;
 let mode = 'solo'; // solo | daily
@@ -81,6 +82,7 @@ function appendResult(attempt, roundNum) {
 
 function startGame() {
   mode = 'solo';
+  el('solo-guess-form').hidden = true;
   clearInterval(countdownTimer);
   el('join-code-form').hidden = true;
   el('code-error').textContent = '';
@@ -167,6 +169,7 @@ function startDaily() {
   const played = todayResult();
   if (played) { showDailyResult(played); return; }
   mode = 'daily';
+  el('solo-guess-form').hidden = true;
   clearInterval(countdownTimer);
   el('join-code-form').hidden = true;
   el('code-error').textContent = '';
@@ -254,6 +257,79 @@ async function shareScoreCard() {
 
 el('solo-btn').addEventListener('click', startGame);
 el('daily-btn').addEventListener('click', startDaily);
+
+/* ---- Solo Guess Timer (TR-29) ---- */
+let guessGame = null;
+
+function fireMomentSolo(kind) {
+  const f = el('flash');
+  f.classList.remove('start', 'stop');
+  void f.offsetWidth;
+  f.classList.add(kind);
+  try { kind === 'start' ? sfxStart() : sfxStop(); } catch { /* audio may be blocked pre-gesture */ }
+}
+
+function renderGuessRoundStart() {
+  el('solo-round').textContent = `Guess Timer — Round ${guessGame.currentRound()} / ${GUESS_SOLO_ROUNDS}`;
+  el('solo-big-label').textContent = 'PLAY IT';
+  el('solo-big').hidden = false;
+  el('solo-big').disabled = false;
+  el('solo-guess-form').hidden = true;
+  el('solo-msg').textContent = 'Tap, then feel the gap between the beeps.';
+}
+
+function startGuessSolo() {
+  mode = 'guess-solo';
+  clearInterval(countdownTimer);
+  el('join-code-form').hidden = true;
+  el('final-score').hidden = true;
+  el('daily-countdown').hidden = true;
+  el('daily-share').hidden = true;
+  guessGame = createGuessSoloGame({ onMoment: fireMomentSolo });
+  el('menu').hidden = true;
+  el('solo-panel').hidden = false;
+  document.querySelector('.target-row').hidden = true;
+  document.querySelector('.score-wrap').hidden = true;
+  el('solo-results').innerHTML = '';
+  el('solo-total').hidden = true;
+  el('solo-again').hidden = true;
+  el('solo-exit').hidden = true;
+  renderGuessRoundStart();
+}
+
+function finishGuessSolo() {
+  const totalMs = guessGame.totalMs();
+  el('solo-round').textContent = 'Done!';
+  const hero = el('final-score');
+  hero.hidden = false;
+  hero.innerHTML = `${fmtOff(totalMs)}<span class="timer-unit">s off</span>`;
+  el('solo-big').hidden = true;
+  el('solo-guess-form').hidden = true;
+  el('solo-msg').textContent = '';
+  el('solo-total').hidden = false;
+  el('solo-total').textContent = `Total: ${fmtOff(totalMs)}s off across ${GUESS_SOLO_ROUNDS} rounds — lower is better.`;
+  el('solo-again').hidden = false;
+  el('solo-exit').hidden = false;
+}
+
+el('guess-solo-btn').addEventListener('click', startGuessSolo);
+
+el('solo-guess-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = parseFloat(el('solo-guess-input').value.replace(',', '.'));
+  if (!Number.isFinite(v) || v <= 0 || v > 99) {
+    el('solo-guess-error').textContent = 'Enter seconds, like 4.7';
+    return;
+  }
+  el('solo-guess-error').textContent = '';
+  el('solo-guess-input').value = '';
+  const attempt = guessGame.submitGuess(Math.round(v * 1000));
+  if (!attempt) return;
+  appendResult({ targetMs: attempt.actualMs, elapsedMs: attempt.guessMs, deviationMs: attempt.deltaMs },
+    guessGame.attempts().length);
+  if (guessGame.getState() === 'done') finishGuessSolo();
+  else renderGuessRoundStart();
+});
 el('daily-share').addEventListener('click', shareScoreCard);
 el('join-game-btn').addEventListener('click', () => {
   const f = el('join-code-form');
@@ -269,7 +345,7 @@ el('join-code-form').addEventListener('submit', (e) => {
   }
   location.href = `/player.html?room=${code}`;
 });
-el('solo-again').addEventListener('click', startGame);
+el('solo-again').addEventListener('click', () => (mode === 'guess-solo' ? startGuessSolo() : startGame()));
 el('solo-exit').addEventListener('click', () => {
   clearInterval(countdownTimer);
   el('final-score').hidden = true;
@@ -283,6 +359,20 @@ el('solo-big').addEventListener('pointerdown', (e) => {
   const btn = el('solo-big');
   btn.classList.add('pressed');
   setTimeout(() => btn.classList.remove('pressed'), 150);
+  if (mode === 'guess-solo') {
+    if (guessGame.getState() !== 'ready') return;
+    btn.disabled = true;
+    el('solo-big-label').textContent = '👂 …';
+    el('solo-msg').textContent = 'Listen…';
+    guessGame.arm(() => {
+      btn.hidden = true;
+      el('solo-guess-form').hidden = false;
+      el('solo-guess-submit').disabled = false;
+      el('solo-guess-input').focus();
+      el('solo-msg').textContent = 'How long was that?';
+    });
+    return;
+  }
   const result = game.press();
   if (result.type === 'started') {
     sfxStart();

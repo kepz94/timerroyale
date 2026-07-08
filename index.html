@@ -16,6 +16,7 @@
       <div id="menu" class="menu">
         <button id="solo-btn" class="join-btn menu-btn" type="button">Single Player</button>
         <button id="daily-btn" class="join-btn menu-btn" type="button">Daily Royale</button>
+        <button id="guess-solo-btn" class="join-btn menu-btn" type="button">Guess Timer</button>
         <button id="join-game-btn" class="join-btn menu-btn menu-btn-alt" type="button">Join a Game</button>
         <a id="host-link" class="join-btn menu-btn menu-btn-alt" href="/host.html">Host a Game</a>
       </div>
@@ -52,6 +53,13 @@
         <p id="solo-msg" class="game-msg"></p>
         <ul id="solo-results" class="round-rows"></ul>
         <p id="solo-total" class="solo-total" hidden></p>
+        <form id="solo-guess-form" class="join-form guess-form" hidden>
+          <label for="solo-guess-input" class="join-label">How long was it? (seconds)</label>
+          <input id="solo-guess-input" class="name-input code-input" type="text" inputmode="decimal"
+                 autocomplete="off" maxlength="5" placeholder="4.7" />
+          <button id="solo-guess-submit" class="join-btn" type="submit">Lock it in</button>
+          <p id="solo-guess-error" class="join-error" role="alert"></p>
+        </form>
         <p id="daily-countdown" class="daily-countdown" hidden></p>
         <div class="menu">
           <button id="daily-share" class="join-btn" type="button" hidden>Share score card</button>
@@ -60,6 +68,7 @@
         </div>
       </section>
     </main>
+    <div id="flash" class="flash" aria-hidden="true"></div>
     <script type="module" src="/src/landing.js"></script>
   </body>
 </html>
