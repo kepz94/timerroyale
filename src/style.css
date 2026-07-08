@@ -1,5 +1,19 @@
 @import './theme.css';
 
+/* ---- v1 theme: DSEG segment fonts (SIL OFL, self-hosted) ---- */
+@font-face {
+  font-family: 'DSEG7-Classic';
+  src: url('./fonts/DSEG7Classic-Bold.woff2') format('woff2');
+  font-weight: 400 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'DSEG14-Classic';
+  src: url('./fonts/DSEG14Classic-Bold.woff2') format('woff2');
+  font-weight: 400 800;
+  font-display: swap;
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   font-family: var(--font);
@@ -148,3 +162,24 @@ h1 { font-size: var(--fs-title); letter-spacing: 0.05em; }
 /* ---- TR-9: presence ---- */
 .player-list li.offline { opacity: 0.45; border: 1px dashed var(--state-disconnected); }
 .round-row.offline .row-name::after { content: ' ⚠ offline'; color: var(--warn); font-size: var(--fs-small); font-weight: 400; }
+
+
+/* ---- v1.0 theme pass: green LED alarm clock (TR-8) ---- */
+.timer-digits {
+  font-family: var(--font-digits);
+  font-weight: 400;
+  color: var(--primary);
+  text-shadow: var(--led-glow);
+}
+.timer-digits.warn { color: var(--warn); text-shadow: var(--led-glow-warn); }
+.timer-digits.danger { color: var(--danger); text-shadow: var(--led-glow-danger); }
+.room-code {
+  font-family: var(--font-alnum);
+  font-weight: 400;
+  text-shadow: var(--led-glow);
+}
+.live-timer { font-family: var(--font-digits); font-weight: 400; color: var(--primary); text-shadow: var(--led-glow); }
+.row-time { color: var(--primary); }
+.round-row.dnf .row-time, .round-row.waiting .row-time { color: var(--text-dim); }
+h1 { color: var(--primary); text-shadow: var(--led-glow); }
+.timer-unit { font-family: var(--font); }

@@ -1,12 +1,12 @@
 /* TimerRoyale design tokens (v0.1.0) — single source of truth for all styling.
    Restyle the entire app by editing this file only. */
 :root {
-  /* Palette */
-  --bg: #0d0f14;            /* near-black stage, TV-friendly */
-  --surface: #171a22;       /* cards, panels */
-  --surface-raised: #212633;
-  --text: #f5f6f8;
-  --text-dim: #9aa3b2;
+  /* Palette — green LED alarm clock on black */
+  --bg: #050807;            /* LED-display black, TV-friendly */
+  --surface: #0b120d;       /* cards, panels */
+  --surface-raised: #121c14;
+  --text: #e9f6ec;
+  --text-dim: #7e967f;
 
   --primary: #22c55e;       /* the green button */
   --primary-pressed: #16a34a;
@@ -15,10 +15,15 @@
   --danger: #ef4444;        /* elimination, time's up */
   --warn: #f59e0b;          /* low-time warning */
   --win: #fbbf24;           /* winner gold */
-  --accent: #38bdf8;        /* joins, info, links */
+  --accent: #4ade80;        /* joins, info, links — green LED family */
 
   /* Typography — big and readable from a couch */
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-digits: 'DSEG7-Classic', ui-monospace, monospace;   /* seven-segment numerals */
+  --font-alnum: 'DSEG14-Classic', ui-monospace, monospace;   /* fourteen-segment letters+numbers */
+  --led-glow: 0 0 10px rgb(34 197 94 / 0.55), 0 0 34px rgb(34 197 94 / 0.22);
+  --led-glow-warn: 0 0 10px rgb(245 158 11 / 0.55), 0 0 34px rgb(245 158 11 / 0.22);
+  --led-glow-danger: 0 0 10px rgb(239 68 68 / 0.6), 0 0 34px rgb(239 68 68 / 0.25);
   --fs-hero: clamp(3rem, 10vw, 7rem);     /* TV timer digits */
   --fs-title: clamp(2rem, 5vw, 3.5rem);
   --fs-body: 1.125rem;
