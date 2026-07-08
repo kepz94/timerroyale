@@ -245,3 +245,10 @@ h1 { color: var(--primary); text-shadow: var(--led-glow); }
 .flash.start { background: var(--primary); animation: flash-pop 500ms ease-out; }
 .flash.stop { background: var(--danger); animation: flash-pop 650ms ease-out; }
 .guess-form { margin-top: var(--gap-lg); }
+
+
+/* ---- TR-33: account chip ---- */
+.account-chip { position: fixed; top: 0.75rem; right: 0.75rem; display: flex; gap: 0.5rem; align-items: center; z-index: 20; }
+.auth-btn { padding: 0.4rem 1.1rem; font-size: var(--fs-small); }
+.auth-name { color: var(--accent); font-size: var(--fs-small); font-weight: 700; }
+.auth-signout { background: none; border: 1px solid var(--text-dim); color: var(--text-dim); border-radius: var(--radius-round); padding: 0.35rem 0.9rem; font: inherit; font-size: var(--fs-small); cursor: pointer; }

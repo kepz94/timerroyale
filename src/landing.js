@@ -1,12 +1,22 @@
 // Landing page: single player front and center; Host a Game -> /host.html.
 import { createSoloGame, SOLO_ROUNDS } from './solo.js';
+import { watchAuth, signInGoogle, signOutUser } from './auth.js';
 import { DAILY_ROUNDS, dateKey, dailyTargets, todayResult, saveResult, msToMidnight, ratingColor } from './daily.js';
 import { createGuessSoloGame, GUESS_SOLO_ROUNDS } from './guesssolo.js';
 import { sfxStart, sfxStop } from './sfx.js';
 import { registerSW } from 'virtual:pwa-register';
 registerSW({ immediate: true });
 
+import { initFirebase } from './firebase.js';
 const el = (id) => document.getElementById(id);
+const db = initFirebase();
+
+watchAuth((user) => {
+  el('auth-btn').hidden = !!user;
+  el('auth-name').hidden = !user;
+  el('signout-btn').hidden = !user;
+  if (user) el('auth-name').textContent = user.displayName || 'Player';
+});
 const fmtS = (ms) => (ms / 1000).toFixed(1);
 import { fmtOff, fmtS2 } from './format.js';
 let game = null;
@@ -254,6 +264,14 @@ async function shareScoreCard() {
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }
 }
+
+el('auth-btn').addEventListener('click', async () => {
+  el('auth-btn').disabled = true;
+  try { await signInGoogle(db); }
+  catch (err) { if (err.code !== 'auth/popup-closed-by-user') console.warn('[auth]', err.code); }
+  el('auth-btn').disabled = false;
+});
+el('signout-btn').addEventListener('click', signOutUser);
 
 el('solo-btn').addEventListener('click', startGame);
 el('daily-btn').addEventListener('click', startDaily);
