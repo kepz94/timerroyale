@@ -100,22 +100,22 @@ function renderGame() {
       if (slot.state === 'waiting') {
         banner.textContent = `Target: ${target}s — ${memberNow}, you're up!`;
         label.textContent = 'TAP TO START';
-        btn.disabled = false; btn.classList.add('your-turn'); btn.classList.remove('waiting');
+        btn.disabled = false; btn.classList.add('your-turn'); btn.classList.remove('waiting', 'running');
         hint.textContent = 'No peeking — pass the phone after your go.';
       } else if (slot.state === 'running') {
         banner.textContent = `Target: ${target}s`;
         label.textContent = 'TAP TO STOP';
-        btn.disabled = false; btn.classList.add('your-turn'); btn.classList.remove('waiting');
+        btn.disabled = false; btn.classList.add('your-turn', 'running'); btn.classList.remove('waiting');
         hint.textContent = '';
       } else if (slot.state === 'between') {
         banner.textContent = `Pass to ${memberNow}!`;
         label.textContent = 'TAP TO START';
-        btn.disabled = false; btn.classList.add('your-turn'); btn.classList.remove('waiting');
+        btn.disabled = false; btn.classList.add('your-turn'); btn.classList.remove('waiting', 'running');
         hint.textContent = `${slot.current}/${slot.members.length} done. No peeking!`;
       } else if (slot.state === 'done') {
         banner.textContent = 'All done!';
         label.textContent = '···';
-        btn.disabled = true; btn.classList.remove('your-turn'); btn.classList.add('waiting');
+        btn.disabled = true; btn.classList.remove('your-turn', 'running'); btn.classList.add('waiting');
         hint.textContent = 'Watch the TV.';
       } else {
         banner.textContent = 'Too slow — DNF';
@@ -205,16 +205,19 @@ function renderGame() {
       banner.textContent = `Target: ${target}s`;
       label.textContent = 'TAP TO START';
       btn.disabled = false;
+      btn.classList.remove('running');
       hint.textContent = 'Tap again when you think you hit it. No peeking — the TV has the timers.';
     } else if (mySlot.state === 'running') {
       banner.textContent = `Target: ${target}s`;
       label.textContent = 'TAP TO STOP';
       btn.disabled = false;
+      btn.classList.add('running');
       hint.textContent = '';
     } else if (mySlot.state === 'stopped') {
       banner.textContent = 'Stopped!';
       label.textContent = '···';
       btn.disabled = true;
+      btn.classList.remove('running');
       hint.textContent = 'Watch the TV for the reveal.';
     } else { // dnf
       banner.textContent = 'Too slow — DNF';
@@ -236,7 +239,7 @@ function renderGame() {
     banner.textContent = '';
     label.textContent = 'PRESS';
     btn.disabled = false;
-    btn.classList.remove('your-turn', 'waiting');
+    btn.classList.remove('your-turn', 'waiting', 'running');
     hint.textContent = startBtn.hidden ? "You're in — watch the TV!" : 'Everyone in? Start a round!';
   }
 }

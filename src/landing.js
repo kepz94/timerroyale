@@ -271,9 +271,11 @@ el('solo-big').addEventListener('pointerdown', (e) => {
   setTimeout(() => btn.classList.remove('pressed'), 150);
   const result = game.press();
   if (result.type === 'started') {
+    el('solo-big').classList.add('running');
     el('solo-big-label').textContent = 'TAP TO STOP';
     el('solo-msg').textContent = '';
   } else if (result.type === 'stopped') {
+    el('solo-big').classList.remove('running');
     setYou(result.attempt.elapsedMs);
     appendResult(result.attempt, game.currentRound() - 1);
     el('solo-msg').textContent = `Off by ${fmtOff(result.attempt.deviationMs)}s`;
@@ -285,6 +287,7 @@ el('solo-big').addEventListener('pointerdown', (e) => {
       setTimeout(() => { btn.disabled = false; renderRoundStart(); }, 700);
     });
   } else if (result.type === 'finished') {
+    el('solo-big').classList.remove('running');
     setYou(result.attempt.elapsedMs);
     appendResult(result.attempt, SOLO_ROUNDS);
     btn.disabled = true;

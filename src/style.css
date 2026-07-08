@@ -220,3 +220,15 @@ h1 { color: var(--primary); text-shadow: var(--led-glow); }
 
 /* ---- TR-23: Daily Royale ---- */
 .daily-countdown { color: var(--accent); font-size: var(--fs-body); font-variant-numeric: tabular-nums; }
+
+
+/* ---- TR-24: running = red ---- */
+.big-btn.running {
+  background: radial-gradient(circle at 35% 30%, #f87171, var(--danger) 60%, #b91c1c);
+  color: #2b0707;
+  box-shadow: 0 10px 0 #991b1b, 0 16px 32px rgb(0 0 0 / 0.5);
+}
+.big-btn.running.pressed, .big-btn.running:active {
+  box-shadow: 0 2px 0 #991b1b, 0 6px 16px rgb(0 0 0 / 0.5);
+}
+.big-btn.running.your-turn { filter: drop-shadow(0 0 24px rgb(239 68 68 / 0.8)); }
