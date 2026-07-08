@@ -5,7 +5,7 @@ import { ref, set, serverTimestamp } from 'firebase/database';
 import { createRound, randomTarget } from './round.js';
 import { logTransition } from './session.js';
 
-export function createKoth({ db, room, players, n, onTv, onMatch }) {
+export function createKoth({ db, room, players, n, hard = false, onTv, onMatch }) {
   const wins = new Map(players.map((p) => [p.playerId, { playerId: p.playerId, name: p.name, wins: 0 }]));
   let roundNum = 0;
   let status = 'between'; // between | round | king
@@ -20,6 +20,7 @@ export function createKoth({ db, room, players, n, onTv, onMatch }) {
       type: 'koth',
       status,
       n,
+      hard,
       roundNum,
       tally: tally(),
       king: status === 'king' ? tally()[0] : null,
@@ -32,7 +33,8 @@ export function createKoth({ db, room, players, n, onTv, onMatch }) {
   }
 
   function applyResult(roundState) {
-    const winnerId = roundState.ranking?.[0] ?? null;
+    // In hard mode roundState.winner is null unless the best hit was exact.
+    const winnerId = roundState.winner?.playerId ?? null;
     if (winnerId) {
       const w = wins.get(winnerId);
       w.wins += 1;
@@ -58,7 +60,7 @@ export function createKoth({ db, room, players, n, onTv, onMatch }) {
     publish();
     onMatch?.(matchState(), null);
     currentRound = createRound({
-      db, room, players,
+      db, room, players, hard,
       targetMs: randomTarget(),
       onTv: {
         state: (g) => {

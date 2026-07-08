@@ -170,6 +170,7 @@ function renderGame() {
     teamsBtn.textContent = 'Team match';
     kothBtn.hidden = startBtn.hidden;
     if (kothBtn.hidden) el('koth-n').hidden = true;
+    el('hard-toggle').hidden = startBtn.hidden;
   }
 
   if (iAmEliminated && match.status !== 'champion') {
@@ -257,8 +258,8 @@ function wireButtons() {
     sendPress(dbRef, room, me.playerId);
   });
   el('start-btn').addEventListener('click', () => {
-    sendEvent(dbRef, room, me.playerId, 'start');
-    logTransition('player-ui', 'lobby', 'start-sent', me.playerId);
+    sendEvent(dbRef, room, me.playerId, 'start', { hard: el('hard-check').checked });
+    logTransition('player-ui', 'lobby', 'start-sent', `${me.playerId} hard=${el('hard-check').checked}`);
   });
   el('rematch-btn').addEventListener('click', () => {
     sendEvent(dbRef, room, me.playerId, 'start-elim');
@@ -300,8 +301,8 @@ function wireButtons() {
   for (const b of document.querySelectorAll('.koth-n-btn')) {
     b.addEventListener('click', () => {
       el('koth-n').hidden = true;
-      sendEvent(dbRef, room, me.playerId, 'start-koth', { n: Number(b.dataset.n) });
-      logTransition('player-ui', 'lobby', 'start-koth-sent', `${me.playerId} n=${b.dataset.n}`);
+      sendEvent(dbRef, room, me.playerId, 'start-koth', { n: Number(b.dataset.n), hard: el('hard-check').checked });
+      logTransition('player-ui', 'lobby', 'start-koth-sent', `${me.playerId} n=${b.dataset.n} hard=${el('hard-check').checked}`);
     });
   }
 }

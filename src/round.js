@@ -16,7 +16,11 @@ export function randomTarget() {
   return Math.round(ms / 100) * 100; // one decimal of seconds
 }
 
-export function createRound({ db, room, players, targetMs, onTv }) {
+export function isExact(elapsedMs, targetMs) {
+  return Math.round(elapsedMs / 100) === Math.round(targetMs / 100);
+}
+
+export function createRound({ db, room, players, targetMs, hard = false, onTv }) {
   // players: [{playerId, name}] — everyone in the lobby plays every round.
   let status = 'running'; // running | over
   const slots = new Map(players.map((p) => [p.playerId, {
@@ -39,6 +43,13 @@ export function createRound({ db, room, players, targetMs, onTv }) {
     return stopped.sort((a, b) => a.deviationMs - b.deviationMs);
   }
 
+  function roundWinner() {
+    const best = results()[0] ?? null;
+    if (!best) return null;
+    if (hard && !isExact(best.elapsedMs, targetMs)) return null; // exact hit or nothing
+    return best;
+  }
+
   function publish(extra = {}) {
     return set(ref(db, `sessions/${room}/game`), {
       mode: 'target',
@@ -46,7 +57,8 @@ export function createRound({ db, room, players, targetMs, onTv }) {
       targetMs,
       players: snapshotPlayers(),
       ranking: status === 'over' ? results().map((s) => s.playerId) : null,
-      winner: status === 'over' ? (results()[0] ?? null) : null,
+      winner: status === 'over' ? roundWinner() : null,
+      hard,
       updatedAt: serverTimestamp(),
       ...extra
     });
@@ -65,7 +77,7 @@ export function createRound({ db, room, players, targetMs, onTv }) {
   }
 
   function getPublicState() {
-    return { mode: 'target', status, targetMs, players: snapshotPlayers(), ranking: status === 'over' ? results().map((s) => s.playerId) : null, winner: status === 'over' ? (results()[0] ?? null) : null };
+    return { mode: 'target', status, targetMs, hard, players: snapshotPlayers(), ranking: status === 'over' ? results().map((s) => s.playerId) : null, winner: status === 'over' ? roundWinner() : null };
   }
 
   function begin() {

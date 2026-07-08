@@ -127,7 +127,9 @@ const tv = {
     } else if (g.status === 'over') {
       el('game-msg').textContent = g.winner
         ? `🏆 ${g.winner.name} wins — ${fmt(g.winner.elapsedMs)}s (Δ ${fmtOff(g.winner.deviationMs)}s). Next round from your phones!`
-        : 'Nobody finished — next round from your phones!';
+        : (g.hard && g.ranking?.length
+            ? '🔥 Nobody hit it exactly — no winner! Next round from your phones!'
+            : 'Nobody finished — next round from your phones!');
     }
   }
 };
@@ -144,13 +146,13 @@ function tickLiveTimers() {
   rafId = requestAnimationFrame(tickLiveTimers);
 }
 
-function startRound(trigger) {
+function startRound(trigger, hard = false) {
   const players = roster.map(({ playerId, name }) => ({ playerId, name }));
   match = null;
   clearMatch(window.__db, window.__room);
-  el('match-banner').textContent = '';
+  el('match-banner').textContent = hard ? '🔥 HARD MODE — exact hit or nothing' : '';
   el('standings').innerHTML = '';
-  round = createRound({ db: window.__db, room: window.__room, players, targetMs: randomTarget(), onTv: tv });
+  round = createRound({ db: window.__db, room: window.__room, players, targetMs: randomTarget(), hard, onTv: tv });
   showGameView(true);
   el('status').textContent = 'Round in progress';
   round.begin();
@@ -216,7 +218,7 @@ function startTeamMatch(trigger) {
 function renderKoth(m, roundState) {
   el('match-banner').textContent = m.status === 'king'
     ? '👑 WE HAVE A KING 👑'
-    : `King of the Hill — first to ${m.n} (round ${m.roundNum})`;
+    : `King of the Hill — first to ${m.n} (round ${m.roundNum})` + (m.hard ? ' 🔥 HARD' : '');
   const standings = el('standings');
   standings.innerHTML = '';
   (m.tally || []).forEach((t) => {
@@ -232,12 +234,12 @@ function renderKoth(m, roundState) {
   }
 }
 
-function startKoth(n, trigger) {
+function startKoth(n, trigger, hard = false) {
   const players = roster.map(({ playerId, name }) => ({ playerId, name }));
   round = null;
-  match = createKoth({ db: window.__db, room: window.__room, players, n, onTv: tv, onMatch: renderKoth });
+  match = createKoth({ db: window.__db, room: window.__room, players, n, hard, onTv: tv, onMatch: renderKoth });
   showGameView(true);
-  el('status').textContent = `King of the Hill — first to ${n}`;
+  el('status').textContent = `King of the Hill — first to ${n}` + (hard ? ' — 🔥 HARD' : '');
   match.nextRound();
   logTransition('host-ui', 'lobby-open', 'koth-started', trigger);
 }
@@ -295,13 +297,13 @@ async function startLobby() {
       }
       if (ev.type === 'start-koth' && isCaptain && !match && (!round || round.isOver())) {
         const n = [3, 5, 7].includes(ev.n) ? ev.n : 3;
-        startKoth(n, `start-koth event ${ev.eventId} from captain (n=${n})`);
+        startKoth(n, `start-koth event ${ev.eventId} from captain (n=${n})`, ev.hard === true);
         return;
       }
       if (ev.type === 'start' && isCaptain) {
         if (match?.isBetween()) { match.nextRound(); return; }
         if (match?.isChampion?.() || match?.isFinal?.() || match?.isKing?.() || (!match && (!round || round.isOver()))) {
-          startRound(`start event ${ev.eventId} from captain`);
+          startRound(`start event ${ev.eventId} from captain`, ev.hard === true);
           return;
         }
       }

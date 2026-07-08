@@ -212,3 +212,7 @@ h1 { color: var(--primary); text-shadow: var(--led-glow); }
 
 /* ---- TR-15: join by code ---- */
 .code-input { font-family: var(--font-alnum); text-transform: uppercase; letter-spacing: 0.3em; width: 10rem; }
+
+
+/* ---- TR-17: hard mode ---- */
+.hard-toggle { justify-content: center; color: var(--warn); }
