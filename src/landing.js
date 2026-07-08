@@ -82,6 +82,8 @@ function appendResult(attempt, roundNum) {
 function startGame() {
   mode = 'solo';
   clearInterval(countdownTimer);
+  el('join-code-form').hidden = true;
+  el('code-error').textContent = '';
   el('final-score').hidden = true;
   el('daily-countdown').hidden = true;
   el('daily-share').hidden = true;
@@ -139,6 +141,8 @@ function startCountdown() {
 
 function showDailyResult(res) {
   mode = 'daily';
+  el('join-code-form').hidden = true;
+  el('code-error').textContent = '';
   el('menu').hidden = true;
   el('solo-panel').hidden = false;
   document.querySelector('.target-row').hidden = true;
@@ -164,6 +168,8 @@ function startDaily() {
   if (played) { showDailyResult(played); return; }
   mode = 'daily';
   clearInterval(countdownTimer);
+  el('join-code-form').hidden = true;
+  el('code-error').textContent = '';
   el('final-score').hidden = true;
   el('daily-countdown').hidden = true;
   el('daily-share').hidden = true;

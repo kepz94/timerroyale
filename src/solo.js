@@ -5,11 +5,11 @@ import { logTransition } from './session.js';
 
 export const SOLO_ROUNDS = 5;
 
-// TR-19: banded targets so games stay short — exactly one long round (18-25s),
-// one medium round (10-18s), and three quick rounds (0.5-10s), shuffled.
+// TR-31 (supersedes TR-19): four quick rounds (0.5-10s) and exactly one
+// 10-15s round, shuffled — keeps games snappy.
 const BANDS = [
-  [18000, 25000],
-  [10000, 18000],
+  [10000, 15000],
+  [500, 10000],
   [500, 10000],
   [500, 10000],
   [500, 10000]
