@@ -18,12 +18,39 @@ let dbRef = null;
 let game = null;
 let match = null;
 
+const fmtS = (ms) => (ms / 1000).toFixed(1);
+
+function shareText() {
+  const url = 'https://timerroyale.web.app';
+  if (match?.type === 'koth' && match.status === 'king') {
+    return `👑 ${match.king.name} is the King of the Hill (first to ${match.n}) in TimerRoyale! Play: ${url}`;
+  }
+  if (match?.type === 'teams' && match.status === 'final') {
+    return `🏆 ${match.winner.name} won the TimerRoyale team series with ${match.winner.points} pts! Play: ${url}`;
+  }
+  if (match?.type === 'elim' && match.status === 'champion') {
+    return `👑 ${match.champion.name} outlasted everyone in TimerRoyale last-man-standing! Play: ${url}`;
+  }
+  if (game?.status === 'over' && game.winner) {
+    return `🏆 ${game.winner.name} hit ${fmtS(game.winner.elapsedMs)}s on a ${fmtS(game.targetMs)}s target (Δ ${fmtS(game.winner.deviationMs)}s) in TimerRoyale! Play: ${url}`;
+  }
+  return null;
+}
+
+function refreshShareBtn() {
+  const btn = el('share-btn');
+  const text = shareText();
+  btn.hidden = !text || !me;
+  if (!btn.hidden && btn.dataset.state !== 'copied') btn.textContent = 'Share result';
+}
+
 function isCaptain() {
   return me && currentPlayers.length > 0 && currentPlayers[0].playerId === me.playerId;
 }
 
 function renderGame() {
   if (!me) return;
+  refreshShareBtn();
   const banner = el('turn-banner');
   const btn = el('big-btn');
   const label = el('big-btn-label');
@@ -235,6 +262,26 @@ function wireButtons() {
   el('rematch-btn').addEventListener('click', () => {
     sendEvent(dbRef, room, me.playerId, 'start-elim');
     logTransition('player-ui', 'lobby', 'start-elim-sent', me.playerId);
+  });
+  el('share-btn').addEventListener('click', async () => {
+    const text = shareText();
+    if (!text) return;
+    const btn = el('share-btn');
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'TimerRoyale', text });
+        logTransition('player-ui', 'result', 'shared', 'native share sheet');
+        return;
+      }
+      throw new Error('no web share');
+    } catch (err) {
+      if (err.name === 'AbortError') return; // user closed the sheet
+      await navigator.clipboard.writeText(text);
+      btn.dataset.state = 'copied';
+      btn.textContent = 'Copied!';
+      setTimeout(() => { delete btn.dataset.state; refreshShareBtn(); }, 2000);
+      logTransition('player-ui', 'result', 'copied-fallback', 'clipboard');
+    }
   });
   el('teams-btn').addEventListener('click', () => {
     sendEvent(dbRef, room, me.playerId, 'start-teams');

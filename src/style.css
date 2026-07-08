@@ -184,3 +184,6 @@ h1 { font-size: var(--fs-title); letter-spacing: 0.05em; }
 .round-row.dnf .row-time, .round-row.waiting .row-time { color: var(--text-dim); }
 h1 { color: var(--primary); text-shadow: var(--led-glow); }
 .timer-unit { font-family: var(--font); }
+
+/* ---- TR-11: share ---- */
+.share-btn { background: var(--surface-raised); color: var(--primary); border: 1px solid var(--primary); }
