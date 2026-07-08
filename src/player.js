@@ -29,6 +29,35 @@ function renderGame() {
   const hint = el('joined-hint');
 
   const teamsBtn = el('teams-btn');
+  const kothBtn = el('koth-btn');
+  // ---- KOTH branch (TR-12) ----
+  if (match?.type === 'koth') {
+    teamsBtn.hidden = true;
+    el('rematch-btn').hidden = true;
+    kothBtn.hidden = true;
+    el('koth-n').hidden = true;
+    const mine = (match.tally || []).find((t) => t.playerId === me.playerId);
+    if (match.status === 'round') {
+      // fall through to the normal round rendering below (game node drives it)
+    } else if (match.status === 'between') {
+      banner.textContent = `${mine?.wins ?? 0}/${match.n} wins`;
+      label.textContent = 'PRESS';
+      btn.disabled = true; btn.classList.remove('your-turn', 'waiting');
+      startBtn.hidden = !isCaptain();
+      startBtn.textContent = 'Next round';
+      hint.textContent = 'Crown race on the TV.';
+      return;
+    } else if (match.status === 'king') {
+      const iAmKing = match.king?.playerId === me.playerId;
+      banner.textContent = iAmKing ? '👑 YOU ARE THE KING!' : `👑 ${match.king?.name} is King`;
+      label.textContent = 'PRESS';
+      btn.disabled = true; btn.classList.remove('your-turn', 'waiting');
+      startBtn.hidden = !isCaptain();
+      startBtn.textContent = 'New game';
+      hint.textContent = '';
+      return;
+    }
+  }
   // ---- Team match branch (TR-7) ----
   if (match?.type === 'teams') {
     const target = game?.targetMs ? (game.targetMs / 1000).toFixed(1) : '?';
@@ -109,6 +138,8 @@ function renderGame() {
     elimBtn.textContent = 'Elimination match';
     teamsBtn.hidden = startBtn.hidden;
     teamsBtn.textContent = 'Team match';
+    kothBtn.hidden = startBtn.hidden;
+    if (kothBtn.hidden) el('koth-n').hidden = true;
   }
 
   if (iAmEliminated && match.status !== 'champion') {
@@ -207,6 +238,16 @@ function wireButtons() {
     sendEvent(dbRef, room, me.playerId, 'start-teams');
     logTransition('player-ui', 'lobby', 'start-teams-sent', me.playerId);
   });
+  el('koth-btn').addEventListener('click', () => {
+    el('koth-n').hidden = !el('koth-n').hidden;
+  });
+  for (const b of document.querySelectorAll('.koth-n-btn')) {
+    b.addEventListener('click', () => {
+      el('koth-n').hidden = true;
+      sendEvent(dbRef, room, me.playerId, 'start-koth', { n: Number(b.dataset.n) });
+      logTransition('player-ui', 'lobby', 'start-koth-sent', `${me.playerId} n=${b.dataset.n}`);
+    });
+  }
 }
 
 async function start() {

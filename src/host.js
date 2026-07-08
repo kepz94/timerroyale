@@ -7,6 +7,7 @@ import { consumeEvents } from './engine.js';
 import { createRound, randomTarget } from './round.js';
 import { createMatch, clearMatch } from './elimination.js';
 import { createTeamMatch } from './teammatch.js';
+import { createKoth } from './koth.js';
 
 const el = (id) => document.getElementById(id);
 const fmt = (ms) => (ms / 1000).toFixed(1);
@@ -199,6 +200,35 @@ function startTeamMatch(trigger) {
   logTransition('host-ui', 'lobby-open', 'teammatch-started', trigger);
 }
 
+function renderKoth(m, roundState) {
+  el('match-banner').textContent = m.status === 'king'
+    ? '👑 WE HAVE A KING 👑'
+    : `King of the Hill — first to ${m.n} (round ${m.roundNum})`;
+  const standings = el('standings');
+  standings.innerHTML = '';
+  (m.tally || []).forEach((t) => {
+    const li = document.createElement('li');
+    li.className = 'standing alive';
+    li.textContent = `${t.name} ${'👑'.repeat(t.wins)}${t.wins ? '' : ' —'} ${t.wins}/${m.n}`;
+    standings.appendChild(li);
+  });
+  if (m.status === 'king') {
+    el('game-msg').textContent = `👑 ${m.king.name} is the King of the Hill!`;
+  } else if (m.status === 'between' && m.roundNum > 0) {
+    el('game-msg').textContent = `Captain: next round!`;
+  }
+}
+
+function startKoth(n, trigger) {
+  const players = roster.map(({ playerId, name }) => ({ playerId, name }));
+  round = null;
+  match = createKoth({ db: window.__db, room: window.__room, players, n, onTv: tv, onMatch: renderKoth });
+  showGameView(true);
+  el('status').textContent = `King of the Hill — first to ${n}`;
+  match.nextRound();
+  logTransition('host-ui', 'lobby-open', 'koth-started', trigger);
+}
+
 function startMatch(trigger) {
   const players = roster.map(({ playerId, name }) => ({ playerId, name }));
   round = null;
@@ -250,9 +280,14 @@ async function startLobby() {
         startTeamMatch(`start-teams event ${ev.eventId} from captain`);
         return;
       }
+      if (ev.type === 'start-koth' && isCaptain && !match && (!round || round.isOver())) {
+        const n = [3, 5, 7].includes(ev.n) ? ev.n : 3;
+        startKoth(n, `start-koth event ${ev.eventId} from captain (n=${n})`);
+        return;
+      }
       if (ev.type === 'start' && isCaptain) {
         if (match?.isBetween()) { match.nextRound(); return; }
-        if (match?.isChampion?.() || match?.isFinal?.() || (!match && (!round || round.isOver()))) {
+        if (match?.isChampion?.() || match?.isFinal?.() || match?.isKing?.() || (!match && (!round || round.isOver()))) {
           startRound(`start event ${ev.eventId} from captain`);
           return;
         }

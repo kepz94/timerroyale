@@ -7,12 +7,13 @@ import { logTransition } from './session.js';
 const STALE_EVENT_MS = 5000;
 
 /** Phone side: append an event. Fire-and-forget. */
-export function sendEvent(db, room, playerId, type) {
+export function sendEvent(db, room, playerId, type, extra = {}) {
   return push(ref(db, `sessions/${room}/events`), {
     type,
     playerId,
     clientTs: Date.now(),
-    serverTs: serverTimestamp()
+    serverTs: serverTimestamp(),
+    ...extra
   });
 }
 
