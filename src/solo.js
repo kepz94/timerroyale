@@ -35,8 +35,7 @@ export function rollTargets() {
   return targets;
 }
 
-export function createSoloGame() {
-  const targets = rollTargets();
+export function createSoloGame({ targets = rollTargets() } = {}) {
   let round = 0;              // 0-based index into targets
   let state = 'ready';        // ready | running | done
   let startTs = null;
@@ -55,7 +54,7 @@ export function createSoloGame() {
       attempts.push({ targetMs: targets[round], elapsedMs, deviationMs });
       logTransition('solo', 'running', 'stopped', `round ${round + 1}: ${elapsedMs}ms (off by ${deviationMs}ms)`);
       round += 1;
-      if (round >= SOLO_ROUNDS) {
+      if (round >= targets.length) {
         state = 'done';
         logTransition('solo', 'stopped', 'done', `total ${totalMs()}ms off`);
         return { type: 'finished', attempt: attempts[attempts.length - 1], totalMs: totalMs() };
@@ -72,6 +71,7 @@ export function createSoloGame() {
 
   return {
     press,
+    rounds: () => targets.length,
     currentRound: () => round + 1,
     currentTargetMs: () => targets[round],
     getState: () => state,

@@ -1,5 +1,6 @@
 // Landing page: single player front and center; Host a Game -> /host.html.
 import { createSoloGame, SOLO_ROUNDS } from './solo.js';
+import { DAILY_ROUNDS, dateKey, dailyTargets, todayResult, saveResult, msToMidnight, ratingColor } from './daily.js';
 import { registerSW } from 'virtual:pwa-register';
 registerSW({ immediate: true });
 
@@ -8,6 +9,11 @@ const fmtS = (ms) => (ms / 1000).toFixed(1);
 import { fmtOff } from './format.js';
 let game = null;
 let shownTotal = 0;
+let mode = 'solo'; // solo | daily
+let countdownTimer = null;
+
+function roundsTotal() { return game?.rounds?.() ?? (mode === 'daily' ? DAILY_ROUNDS : SOLO_ROUNDS); }
+function roundLabel(n) { return mode === 'daily' ? `Daily Royale — Round ${n} / ${DAILY_ROUNDS}` : `Round ${n} / ${roundsTotal()}`; }
 
 function setYou(ms) {
   const you = el('solo-you');
@@ -57,7 +63,7 @@ function flyDifference(deviationMs, onArrive) {
 
 function renderRoundStart() {
   renderScore(shownTotal); // re-sync in case an animation was interrupted
-  el('solo-round').textContent = `Round ${game.currentRound()} / ${SOLO_ROUNDS}`;
+  el('solo-round').textContent = roundLabel(game.currentRound());
   el('solo-target').innerHTML = `${fmtS(game.currentTargetMs())}<span class="timer-unit">s</span>`;
   setYou(null);
   el('solo-big-label').textContent = 'TAP TO START';
@@ -73,6 +79,10 @@ function appendResult(attempt, roundNum) {
 }
 
 function startGame() {
+  mode = 'solo';
+  clearInterval(countdownTimer);
+  el('daily-countdown').hidden = true;
+  el('daily-share').hidden = true;
   game = createSoloGame();
   shownTotal = 0;
   renderScore(0);
@@ -97,12 +107,141 @@ function finishGame(totalMs) {
   el('solo-msg').textContent = '';
   const total = el('solo-total');
   total.hidden = false;
-  total.textContent = `Total: ${fmtOff(totalMs)}s off across ${SOLO_ROUNDS} rounds — lower is better.`;
-  el('solo-again').hidden = false;
+  total.textContent = `Total: ${fmtOff(totalMs)}s off across ${roundsTotal()} rounds — lower is better.`;
+  el('solo-again').hidden = mode === 'daily'; // one attempt per day
   el('solo-exit').hidden = false;
+  if (mode === 'daily') {
+    saveResult({ attempts: game.attempts(), totalMs });
+    el('solo-round').textContent = `Daily Royale — ${dateKey()}`;
+    el('daily-share').hidden = false;
+    startCountdown();
+  }
+}
+
+/* ---- Daily Royale (TR-23) ---- */
+function startCountdown() {
+  const tick = () => {
+    const ms = msToMidnight();
+    const h = String(Math.floor(ms / 3600000)).padStart(2, '0');
+    const m = String(Math.floor((ms % 3600000) / 60000)).padStart(2, '0');
+    const s = String(Math.floor((ms % 60000) / 1000)).padStart(2, '0');
+    el('daily-countdown').textContent = `Next challenge in ${h}:${m}:${s}`;
+    el('daily-countdown').hidden = false;
+  };
+  tick();
+  clearInterval(countdownTimer);
+  countdownTimer = setInterval(tick, 1000);
+}
+
+function showDailyResult(res) {
+  mode = 'daily';
+  el('menu').hidden = true;
+  el('solo-panel').hidden = false;
+  document.querySelector('.target-row').hidden = true;
+  document.querySelector('.score-wrap').hidden = true;
+  el('solo-big').hidden = true;
+  el('solo-msg').textContent = "You've played today — come back after midnight!";
+  el('solo-round').textContent = `Daily Royale — ${res.dateKey}`;
+  el('solo-target').innerHTML = `${fmtOff(res.totalMs)}<span class="timer-unit">s off</span>`;
+  el('solo-results').innerHTML = '';
+  res.attempts.forEach((a, idx) => appendResult(a, idx + 1));
+  el('solo-total').hidden = false;
+  el('solo-total').textContent = `Total: ${fmtOff(res.totalMs)}s off across ${DAILY_ROUNDS} rounds.`;
+  el('solo-again').hidden = true;
+  el('solo-exit').hidden = false;
+  el('daily-share').hidden = false;
+  startCountdown();
+}
+
+function startDaily() {
+  const played = todayResult();
+  if (played) { showDailyResult(played); return; }
+  mode = 'daily';
+  clearInterval(countdownTimer);
+  el('daily-countdown').hidden = true;
+  el('daily-share').hidden = true;
+  game = createSoloGame({ targets: dailyTargets() });
+  shownTotal = 0;
+  renderScore(0);
+  document.querySelector('.score-wrap').hidden = false;
+  document.querySelector('.target-row').hidden = false;
+  el('menu').hidden = true;
+  el('solo-panel').hidden = false;
+  el('solo-results').innerHTML = '';
+  el('solo-total').hidden = true;
+  el('solo-again').hidden = true;
+  el('solo-exit').hidden = true;
+  el('solo-big').hidden = false;
+  renderRoundStart();
+}
+
+function drawScoreCard(res) {
+  const c = document.createElement('canvas');
+  c.width = 1080; c.height = 1080;
+  const x = c.getContext('2d');
+  x.fillStyle = '#050807'; x.fillRect(0, 0, 1080, 1080);
+  x.textAlign = 'center';
+  x.shadowColor = 'rgba(34,197,94,0.6)'; x.shadowBlur = 30;
+  x.fillStyle = '#22c55e';
+  x.font = '700 92px system-ui, sans-serif';
+  x.fillText('TIMERROYALE', 540, 150);
+  x.shadowBlur = 0;
+  x.fillStyle = '#7e967f';
+  x.font = '600 44px system-ui, sans-serif';
+  x.fillText(`DAILY ROYALE — ${res.dateKey}`, 540, 225);
+  res.attempts.forEach((a, i) => {
+    const y = 330 + i * 130;
+    x.fillStyle = ratingColor(a.deviationMs);
+    x.fillRect(240, y - 52, 64, 64);
+    x.fillStyle = '#e9f6ec';
+    x.textAlign = 'left';
+    x.font = '600 52px system-ui, sans-serif';
+    x.fillText(`Round ${i + 1}`, 350, y);
+    x.textAlign = 'right';
+    x.fillText(`off by ${fmtOff(a.deviationMs)}s`, 840, y);
+    x.textAlign = 'center';
+  });
+  x.shadowColor = 'rgba(34,197,94,0.6)'; x.shadowBlur = 24;
+  x.fillStyle = '#22c55e';
+  x.font = '400 130px "DSEG7-Classic", monospace';
+  x.fillText(fmtOff(res.totalMs), 540, 870);
+  x.shadowBlur = 0;
+  x.fillStyle = '#7e967f';
+  x.font = '600 40px system-ui, sans-serif';
+  x.fillText('seconds off total', 540, 930);
+  x.fillStyle = '#4ade80';
+  x.font = '700 44px system-ui, sans-serif';
+  x.fillText('timerroyale.web.app', 540, 1010);
+  return c;
+}
+
+async function shareScoreCard() {
+  const res = todayResult();
+  if (!res) return;
+  await document.fonts.load('130px "DSEG7-Classic"').catch(() => {});
+  const canvas = drawScoreCard(res);
+  const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+  window.__lastCardBlob = blob; // diagnostics
+  const file = new File([blob], `timerroyale-daily-${res.dateKey}.png`, { type: 'image/png' });
+  try {
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'TimerRoyale Daily' });
+      return;
+    }
+    throw new Error('no file share');
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = file.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
 }
 
 el('solo-btn').addEventListener('click', startGame);
+el('daily-btn').addEventListener('click', startDaily);
+el('daily-share').addEventListener('click', shareScoreCard);
 el('join-game-btn').addEventListener('click', () => {
   const f = el('join-code-form');
   f.hidden = !f.hidden;
@@ -119,6 +258,8 @@ el('join-code-form').addEventListener('submit', (e) => {
 });
 el('solo-again').addEventListener('click', startGame);
 el('solo-exit').addEventListener('click', () => {
+  clearInterval(countdownTimer);
+  el('daily-countdown').hidden = true;
   el('solo-panel').hidden = true;
   el('menu').hidden = false;
 });

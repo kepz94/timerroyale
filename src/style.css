@@ -216,3 +216,7 @@ h1 { color: var(--primary); text-shadow: var(--led-glow); }
 
 /* ---- TR-17: hard mode ---- */
 .hard-toggle { justify-content: center; color: var(--warn); }
+
+
+/* ---- TR-23: Daily Royale ---- */
+.daily-countdown { color: var(--accent); font-size: var(--fs-body); font-variant-numeric: tabular-nums; }
