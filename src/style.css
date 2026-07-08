@@ -134,3 +134,9 @@ h1 { font-size: var(--fs-title); letter-spacing: 0.05em; }
 .standing { padding: 0.35rem 1rem; border-radius: var(--radius-round); font-size: var(--fs-small); }
 .standing.alive { background: var(--surface-raised); color: var(--state-alive); }
 .standing.out { background: transparent; color: var(--state-eliminated); text-decoration: line-through; opacity: 0.7; }
+
+/* ---- TR-7: teams ---- */
+.team-toggle { color: var(--text-dim); font-size: var(--fs-small); display: flex; gap: 0.5rem; align-items: center; }
+.team-toggle input { accent-color: var(--primary); width: 1.1rem; height: 1.1rem; }
+.round-row small { color: var(--text-dim); font-weight: 400; margin-left: 0.4rem; }
+.round-row.waiting { border-left-color: transparent; }

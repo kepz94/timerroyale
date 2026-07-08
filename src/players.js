@@ -38,10 +38,11 @@ export async function restorePlayer(db, room) {
 }
 
 /** Joins the room. Caller must have validated the name. */
-export async function joinRoom(db, room, name) {
+export async function joinRoom(db, room, name, members = null) {
   const playerId = crypto.randomUUID();
   await set(ref(db, `sessions/${room}/players/${playerId}`), {
     name,
+    ...(members && members.length ? { members } : {}),
     joinedAt: serverTimestamp(),
     connected: true,
     state: 'lobby'

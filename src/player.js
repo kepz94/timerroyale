@@ -28,10 +28,72 @@ function renderGame() {
   const startBtn = el('start-btn');
   const hint = el('joined-hint');
 
+  const teamsBtn = el('teams-btn');
+  // ---- Team match branch (TR-7) ----
+  if (match?.type === 'teams') {
+    const target = game?.targetMs ? (game.targetMs / 1000).toFixed(1) : '?';
+    const slot = game?.mode === 'relay' ? game.units?.[me.playerId] : null;
+    teamsBtn.hidden = true;
+    el('rematch-btn').hidden = true;
+    if (match.status === 'round' && slot) {
+      startBtn.hidden = true;
+      const memberNow = slot.members?.[slot.current];
+      if (slot.state === 'waiting') {
+        banner.textContent = `Target: ${target}s — ${memberNow}, you're up!`;
+        label.textContent = 'TAP TO START';
+        btn.disabled = false; btn.classList.add('your-turn'); btn.classList.remove('waiting');
+        hint.textContent = 'No peeking — pass the phone after your go.';
+      } else if (slot.state === 'running') {
+        banner.textContent = `Target: ${target}s`;
+        label.textContent = 'TAP TO STOP';
+        btn.disabled = false; btn.classList.add('your-turn'); btn.classList.remove('waiting');
+        hint.textContent = '';
+      } else if (slot.state === 'between') {
+        banner.textContent = `Pass to ${memberNow}!`;
+        label.textContent = 'TAP TO START';
+        btn.disabled = false; btn.classList.add('your-turn'); btn.classList.remove('waiting');
+        hint.textContent = `${slot.current}/${slot.members.length} done. No peeking!`;
+      } else if (slot.state === 'done') {
+        banner.textContent = 'All done!';
+        label.textContent = '···';
+        btn.disabled = true; btn.classList.remove('your-turn'); btn.classList.add('waiting');
+        hint.textContent = 'Watch the TV.';
+      } else {
+        banner.textContent = 'Too slow — DNF';
+        label.textContent = '···';
+        btn.disabled = true; btn.classList.remove('your-turn'); btn.classList.add('waiting');
+        hint.textContent = '';
+      }
+      return;
+    }
+    const standing = (match.leaderboard || []).findIndex((t) => t.unitId === me.playerId) + 1;
+    const mine = (match.leaderboard || []).find((t) => t.unitId === me.playerId);
+    if (match.status === 'between') {
+      banner.textContent = `Round ${match.roundNum}/${match.rounds} done — ${standing ? `#${standing}, ${mine.points} pts` : ''}`;
+      label.textContent = 'PRESS';
+      btn.disabled = true; btn.classList.remove('your-turn', 'waiting');
+      startBtn.hidden = !isCaptain();
+      startBtn.textContent = 'Next round';
+      hint.textContent = 'Standings on the TV.';
+      return;
+    }
+    if (match.status === 'final') {
+      const iWon = match.winner?.unitId === me.playerId;
+      banner.textContent = iWon ? '🏆 Your team wins the series!' : `🏆 ${match.winner?.name} wins the series`;
+      label.textContent = 'PRESS';
+      btn.disabled = true; btn.classList.remove('your-turn', 'waiting');
+      startBtn.hidden = !isCaptain();
+      startBtn.textContent = 'New game';
+      hint.textContent = standing ? `You finished #${standing} with ${mine.points} pts.` : '';
+      return;
+    }
+  }
+  // ---- end team branch ----
+
   const running = game?.status === 'running';
   const over = game?.status === 'over';
   const mySlot = game?.players?.[me.playerId] ?? null;
-  const inMatch = match && match.status !== undefined;
+  const inMatch = match && match.type === 'elim' && match.status !== undefined;
   const iAmEliminated = inMatch && (match.eliminated || []).some((e) => e.playerId === me.playerId);
   const iAmChampion = inMatch && match.status === 'champion' && match.champion?.playerId === me.playerId;
 
@@ -45,6 +107,8 @@ function renderGame() {
     startBtn.textContent = over || match?.status === 'champion' ? 'New game' : 'Start round';
     elimBtn.hidden = startBtn.hidden || currentPlayers.length < 3;
     elimBtn.textContent = 'Elimination match';
+    teamsBtn.hidden = startBtn.hidden;
+    teamsBtn.textContent = 'Team match';
   }
 
   if (iAmEliminated && match.status !== 'champion') {
@@ -139,6 +203,10 @@ function wireButtons() {
     sendEvent(dbRef, room, me.playerId, 'start-elim');
     logTransition('player-ui', 'lobby', 'start-elim-sent', me.playerId);
   });
+  el('teams-btn').addEventListener('click', () => {
+    sendEvent(dbRef, room, me.playerId, 'start-teams');
+    logTransition('player-ui', 'lobby', 'start-teams-sent', me.playerId);
+  });
 }
 
 async function start() {
@@ -180,6 +248,10 @@ async function start() {
   }
 
   el('join-form').hidden = false;
+  el('team-check').addEventListener('change', () => {
+    el('members-input').hidden = !el('team-check').checked;
+    el('name-input').placeholder = el('team-check').checked ? 'Team name' : 'e.g. Kepu';
+  });
   el('join-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const check = validateName(el('name-input').value, currentPlayers.map((p) => p.name));
@@ -188,10 +260,18 @@ async function start() {
       logTransition('player-ui', 'form', 'rejected', check.error);
       return;
     }
+    let members = null;
+    if (el('team-check').checked) {
+      members = el('members-input').value.split(',').map((m) => m.trim()).filter(Boolean);
+      if (members.length === 0) {
+        el('join-error').textContent = 'List your team members (comma-separated).';
+        return;
+      }
+    }
     el('join-error').textContent = '';
     el('join-btn').disabled = true;
     try {
-      const joined = await joinRoom(db, room, check.name);
+      const joined = await joinRoom(db, room, check.name, members);
       me = joined;
       showJoined(joined.name);
     } catch (err) {

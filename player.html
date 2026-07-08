@@ -15,6 +15,10 @@
         <label for="name-input" class="join-label">Your name</label>
         <input id="name-input" class="name-input" type="text" maxlength="16"
                autocomplete="off" autocapitalize="words" placeholder="e.g. Kepu" />
+        <label class="team-toggle"><input id="team-check" type="checkbox" />
+          We're a team sharing this phone</label>
+        <input id="members-input" class="name-input" type="text" maxlength="80" hidden
+               autocomplete="off" autocapitalize="words" placeholder="Members: Alex, Blair, Casey" />
         <button id="join-btn" class="join-btn" type="submit">Join game</button>
         <p id="join-error" class="join-error" role="alert"></p>
       </form>
@@ -27,6 +31,7 @@
         </button>
         <button id="start-btn" class="join-btn" type="button" hidden>Start round</button>
         <button id="rematch-btn" class="join-btn" type="button" hidden>Rematch</button>
+        <button id="teams-btn" class="join-btn" type="button" hidden>Team match</button>
         <p id="joined-hint" class="joined-hint">You're in — watch the TV!</p>
       </div>
 
