@@ -1,18 +1,18 @@
-// Async 1v1 match engine (TR-34 / TR-32b, per ADR-002). ADDITIVE module — no
-// existing file is modified. Both players replay an IDENTICAL seeded target
-// sequence; score = total deviation ms (lower wins; equal = draw).
+// Async 1v1 match engine (TR-34 / TR-32b, per ADR-002).
 //
-// Design (ADR-002, faithfully):
-//   - matches/{id} is the source of truth for a duel's lifecycle + winner.
-//   - users/{uid} is writable ONLY by that uid, so a completion NEVER
-//     cross-writes the opponent's record. Instead each participant indexes
-//     their own match (userMatches/{uid}/{id}) and each user's w-l-d record is
-//     DERIVED from their completed matches on load (reconcileRecord). This is
-//     rule-safe and handles an offline host.
-//   - No server-side functions: client tally, rules-validated transitions.
+// FAIR LIFECYCLE (send-invite-first, host plays LAST):
+//   open          host created + sent the invite; NOBODY has played yet
+//   open+claimed  a challenger claimed the link (challenger != null, score null)
+//   awaiting_host the challenger has played their locked attempt (score in)
+//   complete      the host has played their half → tally → winner
+//   expired       48h elapsed without completing
+// The host commits to the match before playing and submits exactly once, AFTER
+// the challenger's score is locked — so neither side can re-roll for a good
+// score and then send. Both replay IDENTICAL seeded targets; lower total
+// deviation wins; equal = draw.
 //
-// The pure core (seeded targets, tally, lifecycle, deriveRecord) has no
-// Firebase dependency and is unit-tested in test/match.test.mjs.
+// Pure core (seededTargets, tally, lifecycle, deriveRecord) has no Firebase
+// dependency and is unit-tested in test/match.test.mjs.
 
 import { ref, get, set, runTransaction, serverTimestamp } from 'firebase/database';
 import { logTransition } from './session.js';
@@ -20,14 +20,11 @@ import { logTransition } from './session.js';
 export const MATCH_EXPIRY_MS = 48 * 60 * 60 * 1000; // 48h invite window (ADR-002)
 export const CLASSIC_ROUNDS = 5;
 export const GUESS_ROUNDS = 3;
-export const RECENT_LIMIT = 5;                       // last-5 history (TR-36 consumes this)
+export const RECENT_LIMIT = 5;
 export const MATCH_MODES = { classic: 'classic', guess: 'guess' };
 
 /* ============================ deterministic core ============================ */
-/* A match's targets are a pure function of its id, so both players — playing at
-   different times — face the exact same sequence. */
 
-// xmur3 string hash -> 32-bit seed
 export function hashSeed(str) {
   let h = 1779033703 ^ String(str).length;
   for (let i = 0; i < String(str).length; i++) {
@@ -39,7 +36,6 @@ export function hashSeed(str) {
   return (h ^= h >>> 16) >>> 0;
 }
 
-// mulberry32 PRNG -> deterministic float in [0,1)
 export function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {
@@ -50,9 +46,7 @@ export function mulberry32(seed) {
   };
 }
 
-// Mirrors solo.js bands (TR-31): one 10-15s round + four 0.5-10s, distinct, shuffled.
 const CLASSIC_BANDS = [[10000, 15000], [500, 10000], [500, 10000], [500, 10000], [500, 10000]];
-// Mirrors guess.js window (TR-28): 1.0-8.0s.
 const GUESS_MIN_MS = 1000;
 const GUESS_MAX_MS = 8000;
 
@@ -63,7 +57,6 @@ function rollInBand(rng, [min, max], taken) {
   return ms;
 }
 
-/** Deterministic target list for a match id. Same id -> same targets, always. */
 export function seededTargets(mode, seed) {
   const rng = mulberry32(hashSeed(seed));
   if (mode === MATCH_MODES.guess) {
@@ -92,22 +85,25 @@ export function tally(match) {
   return { decided: true, winnerUid: hs < cs ? match.host.uid : match.challenger.uid, draw: false };
 }
 
-/** 'w' | 'l' | 'd' for a uid in a completed match. */
 export function outcomeFor(match, uid) {
   if (match.draw) return 'd';
   return match.winnerUid === uid ? 'w' : 'l';
 }
 
-/** Effective lifecycle state, applying the 48h expiry to still-pending matches. */
+/** Effective state, applying the 48h expiry to anything not yet complete. */
 export function lifecycle(match, now = Date.now()) {
   if (!match) return 'none';
   if (match.status === 'complete') return 'complete';
   if (match.status === 'expired') return 'expired';
-  if (match.challenger == null && now > match.expiresAt) return 'expired';
-  return 'pending';
+  if (now > match.expiresAt) return 'expired';
+  return match.status; // 'open' | 'awaiting_host'
 }
 
-/** Derive a user's record + last-5 history from their completed matches (pure). */
+/** True when it is the host's turn to play their half. */
+export function awaitingHost(match) {
+  return match?.status === 'awaiting_host' && match?.host?.score == null;
+}
+
 export function deriveRecord(matchesForUser, uid) {
   const record = { w: 0, l: 0, d: 0 };
   const completed = matchesForUser
@@ -126,7 +122,7 @@ export function deriveRecord(matchesForUser, uid) {
 
 /* ============================== id + linking =============================== */
 
-const ID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // no 0/o/1/i/l
+const ID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 export function generateMatchId(len = 8) {
   let id = '';
   const rand = new Uint32Array(len);
@@ -153,32 +149,25 @@ async function allocateMatchId(db, attempts = 5) {
 /* ============================== firebase ops =============================== */
 
 /**
- * Host creates the duel (they have already played the seeded targets, so their
- * score is known). Writes matches/{id} = pending and the host's own match index.
- * Returns { matchId, targets, mode, hard, link, expiresAt }.
+ * STEP 1 — Host creates + sends the invite. NO score yet (the host plays last).
+ * Writes matches/{id} = open, host{uid,name,score:null}, challenger:null, seeded
+ * targets, 48h expiry, and the host's own match index. Returns the invite link.
  */
-export async function createMatch(db, opts) {
-  const matchId = await allocateMatchId(db);
-  return createMatchWithId(db, matchId, opts);
-}
-
-/** Like createMatch but with a caller-supplied id: the host pre-seeds targets
- *  from generateMatchId(), plays them, then persists with the known score. */
-export async function createMatchWithId(db, matchId, { mode = 'classic', hard = false, host }) {
+export async function createMatch(db, { mode = 'classic', hard = false, host }) {
   if (!MATCH_MODES[mode]) throw new Error(`unknown mode: ${mode}`);
-  if (!host?.uid || host.score == null) throw new Error('host uid + score required');
+  if (!host?.uid) throw new Error('host uid required');
+  const matchId = await allocateMatchId(db);
   const targets = seededTargets(mode, matchId);
   const expiresAt = Date.now() + MATCH_EXPIRY_MS;
   await set(ref(db, `matches/${matchId}`), {
     mode, hard, seed: matchId, targets, rounds: roundsFor(mode),
-    host: { uid: host.uid, name: host.name ?? 'Host', score: host.score, playedAt: serverTimestamp() },
+    host: { uid: host.uid, name: host.name ?? 'Host', score: null, playedAt: null },
     challenger: null,
-    status: 'pending', winnerUid: null, draw: false,
+    status: 'open', winnerUid: null, draw: false,
     createdAt: serverTimestamp(), expiresAt
   });
   await set(ref(db, `userMatches/${host.uid}/${matchId}`), { role: 'host', at: serverTimestamp() });
-  logTransition('match', 'none', 'pending',
-    `created ${matchId} (${mode}${hard ? '/hard' : ''}) host ${host.uid} @${host.score}ms`);
+  logTransition('match', 'none', 'open', `created ${matchId} (${mode}${hard ? '/hard' : ''}) by host ${host.uid}`);
   return { matchId, targets, mode, hard, link: inviteLink(matchId), expiresAt };
 }
 
@@ -188,55 +177,76 @@ export async function getMatch(db, matchId) {
 }
 
 /**
- * First authenticated taker claims (challenger writable only when null).
- * Transaction guards every reject branch. On success the challenger indexes
- * their own match and receives the identical seeded targets to play.
+ * STEP 2 — First authenticated taker claims the invite (challenger writable only
+ * when null; not the host; not expired). Returns the identical seeded targets.
  */
 export async function claimMatch(db, matchId, challenger) {
   if (!challenger?.uid) throw new Error('challenger uid required');
   const mref = ref(db, `matches/${matchId}`);
   const res = await runTransaction(mref, (m) => {
-    if (m == null) return m;                     // no such match
-    if (m.status !== 'pending') return;          // abort: complete/expired
-    if (m.host?.uid === challenger.uid) return;  // abort: cannot challenge yourself
-    if (m.challenger != null) return;            // abort: already claimed
-    if (Date.now() > m.expiresAt) return;        // abort: past 48h window
+    if (m == null) return m;
+    if (m.status !== 'open') return;
+    if (m.challenger != null) return;
+    if (m.host?.uid === challenger.uid) return;
+    if (Date.now() > m.expiresAt) return;
     m.challenger = { uid: challenger.uid, name: challenger.name ?? 'Challenger', score: null, playedAt: null, claimedAt: Date.now() };
     return m;
   });
   if (!res.committed) {
     const cur = res.snapshot.val();
     const reason = cur == null ? 'no-such-match'
-      : cur.status !== 'pending' ? `already-${cur.status}`
+      : cur.status !== 'open' ? `already-${cur.status}`
       : cur.host?.uid === challenger.uid ? 'own-match'
       : cur.challenger?.uid === challenger.uid ? 'already-claimed-by-you'
       : cur.challenger != null ? 'already-claimed'
-      : Date.now() > cur.expiresAt ? 'expired'
-      : 'unknown';
-    logTransition('match', 'pending', 'claim-rejected', `${matchId}: ${reason}`);
+      : Date.now() > cur.expiresAt ? 'expired' : 'unknown';
+    logTransition('match', 'open', 'claim-rejected', `${matchId}: ${reason}`);
     return { ok: false, reason, match: cur ? { id: matchId, ...cur } : null };
   }
   const m = res.snapshot.val();
   await set(ref(db, `userMatches/${challenger.uid}/${matchId}`), { role: 'challenger', at: serverTimestamp() });
-  logTransition('match', 'pending', 'claimed', `${matchId}: ${challenger.uid}`);
+  logTransition('match', 'open', 'claimed', `${matchId}: ${challenger.uid}`);
   return { ok: true, match: { id: matchId, ...m }, targets: m.targets, mode: m.mode, hard: m.hard };
 }
 
 /**
- * Challenger submits their score; tally + winner are written and the match is
- * completed. Records are NOT cross-written here (rules forbid it) — each user
- * reconciles their own record on load. Only the claiming challenger can complete.
+ * STEP 3 — Challenger submits their locked score (one attempt). Match -> awaiting_host.
  */
-export async function completeMatch(db, matchId, challengerUid, challengerScore) {
-  if (challengerScore == null) throw new Error('challenger score required');
-  const mref = ref(db, `matches/${matchId}`);
-  const res = await runTransaction(mref, (m) => {
-    if (m == null) return m;                              // no such match
-    if (m.status !== 'pending') return;                  // abort: already resolved
-    if (m.challenger?.uid !== challengerUid) return;     // abort: not the claimant
-    if (m.challenger.score != null) return;              // abort: already submitted
-    m.challenger.score = challengerScore;
+export async function submitChallengerScore(db, matchId, challengerUid, score) {
+  if (score == null) throw new Error('challenger score required');
+  const res = await runTransaction(ref(db, `matches/${matchId}`), (m) => {
+    if (m == null) return m;
+    if (m.status !== 'open') return;                      // must be claimed & unplayed
+    if (m.challenger?.uid !== challengerUid) return;      // only the claimant
+    if (m.challenger.score != null) return;               // one attempt only
+    m.challenger.score = score;
     m.challenger.playedAt = Date.now();
+    m.status = 'awaiting_host';
+    return m;
+  });
+  if (!res.committed) {
+    const cur = res.snapshot.val();
+    logTransition('match', 'open', 'challenger-rejected', `${matchId}: ${cur ? cur.status : 'no-match'}`);
+    return { ok: false, match: cur ? { id: matchId, ...cur } : null };
+  }
+  const m = res.snapshot.val();
+  logTransition('match', 'open', 'awaiting_host', `${matchId}: challenger ${challengerUid} @${score}ms`);
+  return { ok: true, match: { id: matchId, ...m } };
+}
+
+/**
+ * STEP 4 — Host plays their half LAST and submits (one attempt), only once the
+ * challenger's score is locked. Tally + winner are written; match -> complete.
+ */
+export async function submitHostScore(db, matchId, hostUid, score) {
+  if (score == null) throw new Error('host score required');
+  const res = await runTransaction(ref(db, `matches/${matchId}`), (m) => {
+    if (m == null) return m;
+    if (m.status !== 'awaiting_host') return;             // challenger must have played
+    if (m.host?.uid !== hostUid) return;                  // only the host
+    if (m.host.score != null) return;                      // one attempt only
+    m.host.score = score;
+    m.host.playedAt = Date.now();
     const t = tally(m);
     m.status = 'complete';
     m.winnerUid = t.winnerUid;
@@ -246,19 +256,17 @@ export async function completeMatch(db, matchId, challengerUid, challengerScore)
   });
   if (!res.committed) {
     const cur = res.snapshot.val();
-    logTransition('match', 'pending', 'complete-rejected', `${matchId}: ${cur ? cur.status : 'no-match'}`);
+    logTransition('match', 'awaiting_host', 'host-rejected', `${matchId}: ${cur ? cur.status : 'no-match'}`);
     return { ok: false, match: cur ? { id: matchId, ...cur } : null };
   }
   const m = res.snapshot.val();
-  logTransition('match', 'pending', 'complete',
-    `${matchId}: winner ${m.winnerUid ?? (m.draw ? 'draw' : 'none')}`);
+  logTransition('match', 'awaiting_host', 'complete', `${matchId}: winner ${m.winnerUid ?? (m.draw ? 'draw' : 'none')}`);
   return { ok: true, match: { id: matchId, ...m }, winnerUid: m.winnerUid, draw: m.draw };
 }
 
 /**
- * Recompute the caller's own record + last-5 history from their completed
- * matches and persist to users/{uid} (rule-safe: writes only own node).
- * Call on profile open / after completing a match. Idempotent.
+ * Recompute the caller's own record + last-5 from their completed matches and
+ * persist to users/{uid} (rule-safe: writes only own node). Idempotent.
  */
 export async function reconcileRecord(db, uid) {
   const idxSnap = await get(ref(db, `userMatches/${uid}`));
@@ -267,12 +275,11 @@ export async function reconcileRecord(db, uid) {
   const matches = await Promise.all(ids.map((id) => getMatch(db, id)));
   const derived = deriveRecord(matches.filter(Boolean), uid);
   await runTransaction(ref(db, `users/${uid}`), (u) => {
-    if (u == null) return u;                 // no profile: nothing to write
+    if (u == null) return u;
     u.record = derived.record;
     u.recent = derived.recent;
     return u;
   });
-  logTransition('match', 'record', 'reconciled',
-    `${uid}: ${derived.record.w}-${derived.record.l}-${derived.record.d}`);
+  logTransition('match', 'record', 'reconciled', `${uid}: ${derived.record.w}-${derived.record.l}-${derived.record.d}`);
   return derived;
 }

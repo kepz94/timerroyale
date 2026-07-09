@@ -2,11 +2,11 @@
 import { createSoloGame, SOLO_ROUNDS } from './solo.js';
 import { watchAuth, signInGoogle, signOutUser, getProfile, claimUsername, validUsername } from './auth.js';
 import { BANNERS, ACHIEVEMENTS, tierBannerFor } from './cosmetics.js';
-import { ref as dbRef2, update as dbUpdate } from 'firebase/database';
+import { ref as dbRef2, update as dbUpdate, get as dbGet2 } from 'firebase/database';
 import { DAILY_ROUNDS, dateKey, dailyTargets, todayResult, saveResult, msToMidnight, ratingColor } from './daily.js';
 import { createGuessSoloGame, GUESS_SOLO_ROUNDS } from './guesssolo.js';
 import { validatePool, resolveMode, ENVIRONMENTS } from './hostconfig.js';
-import { generateMatchId, seededTargets, createMatchWithId } from './match.js';
+import { createMatch, getMatch, submitHostScore, seededTargets, lifecycle, awaitingHost, outcomeFor } from './match.js';
 import { sfxStart, sfxStop } from './sfx.js';
 import { registerSW } from 'virtual:pwa-register';
 registerSW({ immediate: true });
@@ -526,29 +526,22 @@ el('solo-big').addEventListener('pointerdown', (e) => {
 });
 
 
-/* ---- Host branching: Screen-1 environment select + 1v1 invite (TR-46 / TR-34) ---- */
-let hostCtx = null;
+/* ---- Host branching: Screen-1 select + async 1v1 (TR-46 / TR-34, send-first) ---- */
+let hostCtx = null; // set only while the host plays THEIR half of a claimed match
 
-el('host-link').addEventListener('click', (e) => {
-  e.preventDefault();
-  el('menu').hidden = true;
-  el('host-choice').hidden = false;
-});
-el('host-choice-back').addEventListener('click', () => {
-  el('host-choice').hidden = true;
-  el('menu').hidden = false;
-});
+el('host-link').addEventListener('click', (e) => { e.preventDefault(); el('menu').hidden = true; el('host-choice').hidden = false; });
+el('host-choice-back').addEventListener('click', () => { el('host-choice').hidden = true; el('menu').hidden = false; });
 el('host-party-btn').addEventListener('click', () => { location.href = '/host.html'; });
+
 el('host-1v1-btn').addEventListener('click', () => {
   el('host-choice').hidden = true;
   el('host-1v1-panel').hidden = false;
-  el('host-1v1-msg').textContent = currentUser ? '' : 'Tip: sign in (top of screen) so this match counts toward your record.';
+  el('host-1v1-result').hidden = true;
+  el('host-1v1-msg').textContent = currentUser ? '' : 'Sign in (top of screen) to create a ranked 1v1.';
 });
-el('host-1v1-back').addEventListener('click', () => {
-  el('host-1v1-panel').hidden = true;
-  el('menu').hidden = false;
-});
-el('host-1v1-play').addEventListener('click', () => {
+el('host-1v1-back').addEventListener('click', () => { el('host-1v1-panel').hidden = true; el('menu').hidden = false; });
+
+el('host-1v1-play').addEventListener('click', async () => {
   const pool = [];
   if (el('pool-classic').checked) pool.push('classic');
   if (el('pool-guess').checked) pool.push('guess');
@@ -556,18 +549,79 @@ el('host-1v1-play').addEventListener('click', () => {
   if (!check.ok) { el('host-1v1-msg').textContent = check.reason; return; }
   if (!currentUser) { el('host-1v1-msg').textContent = 'Sign in (top of screen) to create a ranked 1v1.'; return; }
   el('host-1v1-msg').textContent = '';
-  const chosen = resolveMode(check.pool);
-  hostCtx = { id: generateMatchId(), mode: chosen };
-  const targets = seededTargets(chosen, hostCtx.id);
-  el('host-1v1-panel').hidden = true;
-  if (chosen === 'classic') startGame({ targets });
-  else startGuessSolo({ targets });
+  el('host-1v1-play').disabled = true;
+  try {
+    const profile = await getProfile(db, currentUser.uid);
+    const mode = resolveMode(check.pool);
+    const res = await createMatch(db, { mode, hard: false, host: { uid: currentUser.uid, name: profile?.displayName ?? 'Host' } });
+    el('host-1v1-link').textContent = res.link;
+    el('host-1v1-result').hidden = false;
+    el('host-1v1-msg').textContent = '';
+    try { await navigator.clipboard.writeText(res.link); el('host-1v1-msg').textContent = 'Link copied — send it to your challenger.'; } catch { /* clipboard may be blocked */ }
+  } catch (err) {
+    el('host-1v1-msg').textContent = 'Could not create the match — online 1v1 needs Google sign-in + server rules enabled.';
+  }
+  el('host-1v1-play').disabled = false;
 });
+el('host-1v1-copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(el('host-1v1-link').textContent); el('host-1v1-msg').textContent = 'Copied!'; } catch { /* */ }
+});
+
+/* My 1v1s — list the host's matches; play your half when the challenger has finished */
+el('my-1v1s-btn').addEventListener('click', () => { el('host-choice').hidden = true; openMy1v1s(); });
+el('my-1v1s-back').addEventListener('click', () => { el('my-1v1s-panel').hidden = true; el('menu').hidden = false; });
+
+async function openMy1v1s() {
+  el('my-1v1s-panel').hidden = false;
+  const list = el('my-1v1s-list');
+  list.innerHTML = '';
+  el('my-1v1s-empty').hidden = true;
+  if (!currentUser) { el('my-1v1s-empty').textContent = 'Sign in (top of screen) to see your 1v1s.'; el('my-1v1s-empty').hidden = false; return; }
+  let ids = [];
+  try {
+    const snap = await dbGet2(dbRef2(db, `userMatches/${currentUser.uid}`));
+    ids = snap.exists() ? Object.keys(snap.val()) : [];
+  } catch { el('my-1v1s-empty').textContent = 'Could not load — check your connection.'; el('my-1v1s-empty').hidden = false; return; }
+  if (!ids.length) { el('my-1v1s-empty').textContent = 'No 1v1s yet — create one from “1v1 Online Invite”.'; el('my-1v1s-empty').hidden = false; return; }
+  const matches = (await Promise.all(ids.map((id) => getMatch(db, id)))).filter(Boolean)
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  matches.forEach((m) => renderMy1v1(list, m));
+}
+
+function renderMy1v1(list, m) {
+  const li = document.createElement('li');
+  li.className = 'round-row';
+  const iAmHost = m.host.uid === currentUser.uid;
+  const state = lifecycle(m);
+  const opp = iAmHost ? (m.challenger?.name ?? 'no challenger yet') : m.host.name;
+  let right = '';
+  if (state === 'expired') right = 'expired';
+  else if (state === 'complete') { const o = outcomeFor(m, currentUser.uid); right = o === 'w' ? 'WON' : o === 'l' ? 'lost' : 'draw'; }
+  else if (state === 'open') right = m.challenger ? 'challenger playing…' : 'waiting for a challenger';
+  else if (state === 'awaiting_host') right = iAmHost ? 'YOUR TURN' : 'waiting for host';
+  li.innerHTML = `<span class="row-name">${m.mode} vs ${opp}</span><span class="row-time">${right}</span>`;
+  if (iAmHost && awaitingHost(m)) {
+    const btn = document.createElement('button');
+    btn.className = 'join-btn';
+    btn.textContent = 'Play your half';
+    btn.addEventListener('click', () => startHostHalf(m));
+    li.appendChild(btn);
+  }
+  list.appendChild(li);
+}
+
+function startHostHalf(m) {
+  hostCtx = { matchId: m.id, mode: m.mode };
+  const targets = (m.targets && m.targets.length) ? m.targets : seededTargets(m.mode, m.id);
+  el('my-1v1s-panel').hidden = true;
+  if (m.mode === 'classic') startGame({ targets });
+  else startGuessSolo({ targets });
+}
 
 async function finishHostChallenge(totalMs) {
   const ctx = hostCtx;
   hostCtx = null;
-  el('solo-round').textContent = `1v1 ${ctx.mode} — your half is in`;
+  el('solo-round').textContent = 'Your half is in';
   el('final-score').hidden = false;
   el('final-score').innerHTML = `${fmtOff(totalMs)}<span class="timer-unit">s off</span>`;
   el('solo-big').hidden = true;
@@ -575,18 +629,15 @@ async function finishHostChallenge(totalMs) {
   el('solo-again').hidden = true;
   el('solo-exit').hidden = false;
   el('solo-total').hidden = true;
-  el('solo-msg').textContent = 'Generating your invite link…';
+  el('solo-msg').textContent = 'Scoring the match…';
   try {
-    const profile = await getProfile(db, currentUser.uid);
-    const res = await createMatchWithId(db, ctx.id, {
-      mode: ctx.mode, hard: false,
-      host: { uid: currentUser.uid, name: profile?.displayName ?? 'Host', score: totalMs }
-    });
-    el('solo-total').hidden = false;
-    el('solo-total').textContent = res.link;
-    el('solo-msg').textContent = 'Send this link to your challenger (valid 48h):';
-    try { await navigator.clipboard.writeText(res.link); el('solo-msg').textContent = 'Link copied — send it to your challenger (48h):'; } catch { /* clipboard may be blocked pre-gesture */ }
+    const res = await submitHostScore(db, ctx.matchId, currentUser.uid, totalMs);
+    if (!res.ok) { el('solo-msg').textContent = 'This match was already scored.'; return; }
+    const o = outcomeFor(res.match, currentUser.uid);
+    const verdict = o === 'w' ? '🏆 You won!' : o === 'l' ? 'You lost.' : "It's a draw.";
+    el('solo-round').textContent = 'Match complete';
+    el('solo-msg').textContent = `${verdict}  You: ${fmtOff(res.match.host.score)}s off · Them: ${fmtOff(res.match.challenger.score)}s off.`;
   } catch (err) {
-    el('solo-msg').textContent = 'Could not create the match — online 1v1 needs Google sign-in + server rules enabled.';
+    el('solo-msg').textContent = 'Could not submit your score — check your connection / sign-in.';
   }
 }
