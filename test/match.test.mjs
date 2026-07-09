@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  seededTargets, tally, outcomeFor, lifecycle, deriveRecord,
+  seededTargets, tally, outcomeFor, lifecycle, awaitingHost, deriveRecord,
   MATCH_EXPIRY_MS, CLASSIC_ROUNDS, GUESS_ROUNDS, roundsFor, MATCH_MODES
 } from '../src/match.js';
 
@@ -59,13 +59,20 @@ test('outcomeFor: w / l / d', () => {
   assert.equal(outcomeFor({ winnerUid: null, draw: true }, 'H'), 'd');
 });
 
-test('lifecycle: pending / complete / expired via 48h window', () => {
+test('lifecycle: open / awaiting_host / complete / expired via 48h window', () => {
   const now = 1_000_000_000_000;
-  assert.equal(lifecycle({ status: 'pending', challenger: null, expiresAt: now + 1000 }, now), 'pending');
-  assert.equal(lifecycle({ status: 'pending', challenger: null, expiresAt: now - 1000 }, now), 'expired');
-  assert.equal(lifecycle({ status: 'pending', challenger: { uid: 'C' }, expiresAt: now - 1000 }, now), 'pending');
-  assert.equal(lifecycle({ status: 'complete' }, now), 'complete');
+  assert.equal(lifecycle({ status: 'open', expiresAt: now + 1000 }, now), 'open');
+  assert.equal(lifecycle({ status: 'awaiting_host', expiresAt: now + 1000 }, now), 'awaiting_host');
+  assert.equal(lifecycle({ status: 'open', expiresAt: now - 1000 }, now), 'expired');
+  assert.equal(lifecycle({ status: 'awaiting_host', expiresAt: now - 1000 }, now), 'expired');
+  assert.equal(lifecycle({ status: 'complete', expiresAt: now - 1000 }, now), 'complete');
   assert.equal(MATCH_EXPIRY_MS, 48 * 60 * 60 * 1000);
+});
+
+test('awaitingHost: host plays only after challenger has locked a score', () => {
+  assert.equal(awaitingHost({ status: 'awaiting_host', host: { score: null } }), true);
+  assert.equal(awaitingHost({ status: 'open', host: { score: null } }), false);
+  assert.equal(awaitingHost({ status: 'awaiting_host', host: { score: 1200 } }), false);
 });
 
 test('deriveRecord: counts w/l/d, orders recent, caps at 5, names opponent', () => {
