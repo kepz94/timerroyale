@@ -9,3 +9,14 @@ export const fmtS2 = (ms) => (ms / 1000).toFixed(2);
 export function fmtOff(ms) {
   return (Math.round(ms / 10) / 100).toFixed(2).replace(/\.?0+$/, '');
 }
+
+/**
+ * Signed deviation in seconds to two decimals for the party reveal (TR-52
+ * precision standard): 6350-6420 -> "-0.07", 8900-6420 -> "+2.48", 0 -> "0.00".
+ * Positive = over the target, negative = under.
+ */
+export function fmtSigned(ms) {
+  const s = ms / 1000;
+  const sign = s > 0 ? '+' : s < 0 ? '-' : '';
+  return sign + Math.abs(s).toFixed(2);
+}

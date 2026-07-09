@@ -1,6 +1,9 @@
 // TV gameboard (ADR-004). Phase 1 highlight-menu (D-Pad). Phase 2/3: PvE
-// (KOTH/LMS) and PvP (single-elim bracket) launch on the TV; phones send press,
-// host paces rounds with Next Round.
+// (KOTH/LMS) and PvP/Teams tournaments launch on the TV; phones send press,
+// host paces rounds with Next Round. TR-52: the party tournament hierarchy runs
+// through tournament.js — a GAME is first to 5 round-wins, a MATCH is Best-of-5
+// games (first to 3), matches alternate on the board after each completed game
+// during a tier, and Grand Finals Mode locks onto the final two teams.
 import QRCode from 'qrcode';
 import { registerSW } from 'virtual:pwa-register';
 registerSW({ immediate: true });
@@ -12,13 +15,18 @@ import { validatePool, validateCategory, ENVIRONMENTS, KOTH_THRESHOLDS } from '.
 import { createKoth } from './koth.js';
 import { createMatch as createElim } from './elimination.js';
 import { createBracket, reportGameWin, activeMatches, isComplete, roundLabel } from './bracket.js';
+import { createTournament, ROUNDS_TO_WIN_GAME } from './tournament.js';
 import { createTeamGame, distributeTeams } from './teamgame.js';
 import { createDraftState, applyPick, autoPick, draftTeams } from './draft.js';
 import { ref as dbRef, set as dbSet } from 'firebase/database';
-import { fmtOff, fmtS2 } from './format.js';
+import { fmtOff, fmtS2, fmtS, fmtSigned } from './format.js';
 
 const el = (id) => document.getElementById(id);
 const fmt = (ms) => (ms / 1000).toFixed(1);
+// TR-52 precision: Classic/Guess targets render to 2 decimals, Hard to 1.
+const fmtTarget = (g) => (g.hard ? fmt(g.targetMs) : fmtS2(g.targetMs));
+// Ledger-dot strip for a game score (filled / empty out of ROUNDS_TO_WIN_GAME).
+const dots = (won, filled, empty) => filled.repeat(Math.min(won, ROUNDS_TO_WIN_GAME)) + empty.repeat(Math.max(0, ROUNDS_TO_WIN_GAME - won));
 const db = initFirebase();
 const parts = location.pathname.split('/').filter(Boolean);
 const lobbyId = parts[1] ? parts[1].toUpperCase() : null;
@@ -27,7 +35,8 @@ let players = [];
 let hostId = null;
 let inGame = false;    // true once a game/tournament starts (gates the menu)
 let engine = null;     // active round-composing engine (koth/elim/per-match koth)
-let bracket = null;    // PvP/Teams tournament
+let tourney = null;    // TR-52 tournament scheduler (PvP/Teams)
+let bracket = null;    // tourney.bracket (kept for the TV bracket render)
 let curMatch = null;
 let isTeams = false;
 let draftState = null;
@@ -133,41 +142,50 @@ function launchPve() {
   engine.nextRound();
 }
 
-/* ---- PvP single-elim tournament ---- */
+/* ---- PvP single-elim tournament (TR-52 hierarchy) ---- */
 function launchPvp() {
   const ents = activePlayers().map((p) => ({ id: p.playerId, name: p.name }));
-  bracket = createBracket(ents, { gamesToWin: 1 }); // each bracket match = one first-to-3 game (v1)
+  tourney = createTournament(ents); // MATCH = Best of 5 games (first to 3)
+  bracket = tourney.bracket;
   showGame(true);
   logTransition('tv', 'setup', 'pvp-launch', `${ents.length} players`);
-  nextBracketMatch();
+  nextTourneyGame();
 }
 
-function nextBracketMatch() {
+// Rotate onto the next game per the Match Rotation Loop / Grand Finals lock.
+function nextTourneyGame() {
   engine = null;
-  if (isComplete(bracket)) { renderBracket(); renderChampion(bracket.champion); dbSet(dbRef(db, `sessions/${lobbyId}/match`), { type: 'tournament', status: 'complete' }).catch(() => {}); return; }
-  curMatch = activeMatches(bracket)[0];
+  if (tourney.isComplete()) {
+    renderBracket();
+    renderChampion(bracket.champion);
+    dbSet(dbRef(db, `sessions/${lobbyId}/match`), { type: 'tournament', status: 'complete' }).catch(() => {});
+    return;
+  }
+  curMatch = tourney.current();
   renderBracket();
-  el('tv-match-banner').textContent = isTeams ? 'Teams Tournament' : 'PvP Tournament';
+  const gf = tourney.isGrandFinals();
+  el('tv-match-banner').textContent = gf ? '🏆 GRAND FINALS — Best of 5' : (isTeams ? 'Teams Tournament' : 'PvP Tournament');
   el('tv-target').innerHTML = '';
   el('tv-round-rows').innerHTML = '';
   el('tv-game-msg').classList.remove('final');
-  el('tv-game-msg').textContent = `Next up: ${curMatch.a.name} vs ${curMatch.b.name} — get ready!`;
+  el('tv-game-msg').textContent = `${gf ? 'Grand Finals — ' : ''}Next up: ${curMatch.a.name} vs ${curMatch.b.name} — first to ${ROUNDS_TO_WIN_GAME} takes the game!`;
   setTimeout(isTeams ? startTeamMatch : startBracketGame, 2600);
 }
 
 function startBracketGame() {
   const two = [{ playerId: curMatch.a.id, name: curMatch.a.name }, { playerId: curMatch.b.id, name: curMatch.b.name }];
-  engine = createKoth({ db, room: lobbyId, players: two, n: 3, hard: !!config.pool.hard, onTv: { state: renderRound }, onMatch: onPvpGame });
+  // A GAME = first to ROUNDS_TO_WIN_GAME round-wins (TR-52).
+  engine = createKoth({ db, room: lobbyId, players: two, n: ROUNDS_TO_WIN_GAME, hard: !!config.pool.hard, onTv: { state: renderRound }, onMatch: onPvpGame });
   engine.nextRound();
 }
 
 function onPvpGame(m) {
   renderKoth(m, true);
   if (m.status === 'king') {
-    reportGameWin(bracket, curMatch.id, m.king.playerId);
+    tourney.reportGame(curMatch.id, m.king.playerId); // credit the game + rotate
     engine = null;
     renderBracket();
-    setTimeout(nextBracketMatch, 2600);
+    setTimeout(nextTourneyGame, 2600);
   }
 }
 
@@ -203,10 +221,11 @@ function finalizeDraft() {
   stopClock();
   const teams = draftTeams(draftState, nameOf);
   draftState = null;
-  bracket = createBracket(teams.map((t) => ({ id: t.id, name: `${t.emoji} ${t.name}`, members: t.members })), { gamesToWin: 1 });
+  tourney = createTournament(teams.map((t) => ({ id: t.id, name: `${t.emoji} ${t.name}`, members: t.members })));
+  bracket = tourney.bracket;
   dbSet(dbRef(db, `sessions/${lobbyId}/match`), { type: 'tournament', status: 'playing' }).catch(() => {});
   logTransition('tv', 'draft', 'tournament-start', `${teams.length} teams`);
-  nextBracketMatch();
+  nextTourneyGame();
 }
 function renderDraft() {
   if (!draftState) return;
@@ -230,23 +249,26 @@ function renderDraft() {
 
 function startTeamMatch() {
   const teamA = curMatch.a, teamB = curMatch.b; // entrants carry {id,name,members}
+  // A GAME = first to ROUNDS_TO_WIN_GAME round-wins; active member rotates each
+  // round (solo team plays every round — the 2v1 fairness rule in teamgame.js).
   engine = createTeamGame({
-    db, room: lobbyId, teamA, teamB, n: 3, hard: !!config.pool.hard,
+    db, room: lobbyId, teamA, teamB, n: ROUNDS_TO_WIN_GAME, hard: !!config.pool.hard,
     onTv: { state: (g, ctx) => renderTeamRound(g, ctx) },
-    onGame: (r) => { if (r.status === 'over') { reportGameWin(bracket, curMatch.id, r.winner.id); engine = null; renderBracket(); setTimeout(nextBracketMatch, 2600); } }
+    onGame: (r) => { if (r.status === 'over') { tourney.reportGame(curMatch.id, r.winner.id); engine = null; renderBracket(); setTimeout(nextTourneyGame, 2600); } }
   });
   engine.nextRound();
 }
 
 function renderTeamRound(g, ctx) {
-  el('tv-match-banner').textContent = `${ctx.teamA.name}  ${ctx.winsA} — ${ctx.winsB}  ${ctx.teamB.name}   (first to ${ctx.n})`;
-  el('tv-target').innerHTML = `${fmt(g.targetMs)}<span class="timer-unit">s</span>`;
+  const ledgerA = dots(ctx.winsA, '🔵', '⚪'), ledgerB = dots(ctx.winsB, '🔴', '⚪');
+  el('tv-match-banner').textContent = `${ctx.teamA.name} ${ledgerA} ${ctx.winsA}–${ctx.winsB} ${ledgerB} ${ctx.teamB.name}`;
+  el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
   const label = { [ctx.activeA.playerId]: ctx.teamA.name, [ctx.activeB.playerId]: ctx.teamB.name };
   const rows = el('tv-round-rows'); rows.innerHTML = '';
   Object.keys(g.players).forEach((id) => {
     const s = g.players[id];
     const li = document.createElement('li'); li.className = `round-row ${s.state}`;
-    const time = s.state === 'stopped' ? `${fmtS2(s.elapsedMs)}s <span class="deviation">Δ ${fmtOff(s.deviationMs)}s</span>` : s.state === 'dnf' ? 'DNF' : s.state === 'running' ? '⏱…' : '—';
+    const time = s.state === 'stopped' ? `${fmtS2(s.elapsedMs)}s <span class="deviation">Δ ${fmtSigned(s.elapsedMs - g.targetMs)}s</span>` : s.state === 'dnf' ? 'DNF' : s.state === 'running' ? '⏱…' : '—';
     const medal = g.status === 'over' && g.ranking?.[0] === id ? '🏆 ' : '';
     li.innerHTML = `<span class="row-name">${medal}${label[id] || ''}: ${s.name}</span><span class="row-time">${time}</span>`;
     rows.appendChild(li);
@@ -258,7 +280,7 @@ function renderTeamRound(g, ctx) {
 
 /* ---------------- rendering ---------------- */
 function renderRound(g) {
-  el('tv-target').innerHTML = `${fmt(g.targetMs)}<span class="timer-unit">s</span>`;
+  el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
   const rows = el('tv-round-rows');
   rows.innerHTML = '';
   const order = g.status === 'over' && g.ranking ? g.ranking.concat(Object.keys(g.players).filter((id) => !g.ranking.includes(id))) : Object.keys(g.players);
@@ -266,7 +288,7 @@ function renderRound(g) {
     const s = g.players[id];
     const li = document.createElement('li');
     li.className = `round-row ${s.state}`;
-    const time = s.state === 'stopped' ? `${fmtS2(s.elapsedMs)}s <span class="deviation">Δ ${fmtOff(s.deviationMs)}s</span>` : s.state === 'dnf' ? 'DNF' : s.state === 'running' ? '⏱…' : '—';
+    const time = s.state === 'stopped' ? `${fmtS2(s.elapsedMs)}s <span class="deviation">Δ ${fmtSigned(s.elapsedMs - g.targetMs)}s</span>` : s.state === 'dnf' ? 'DNF' : s.state === 'running' ? '⏱…' : '—';
     const medal = g.status === 'over' && g.ranking?.[0] === id ? '🏆 ' : '';
     li.innerHTML = `<span class="row-name">${medal}${s.name}</span><span class="row-time">${time}</span>`;
     rows.appendChild(li);
@@ -309,8 +331,9 @@ function renderBracket() {
       const a = mm.a ? mm.a.name : '(bye)';
       const b = mm.b ? mm.b.name : (mm.bye ? '(bye)' : '…');
       const mark = mm === curMatch && !mm.winner ? '▶ ' : '';
+      const games = (mm.a && mm.b) ? `  (${mm.gamesA}–${mm.gamesB})` : '';
       const win = mm.winner ? `  ✓ ${mm.winner.name}` : '';
-      li.textContent = `${mark}${a} vs ${b}${win}`;
+      li.textContent = `${mark}${a} vs ${b}${games}${win}`;
       st.appendChild(li);
     });
   });

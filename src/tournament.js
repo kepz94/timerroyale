@@ -67,12 +67,35 @@ export function createTournament(entrants, {
     };
   }
 
+  /**
+   * Report a COMPLETED game directly (for engines that run a full first-to-N
+   * game internally, e.g. koth/teamgame). Credits the game to the bracket, then
+   * applies the rotation loop / Grand Finals lock. Prefer this when the game
+   * engine already owns the per-round tally; use reportRoundWin when this module
+   * should own the ledger dots.
+   * @param {number} matchId
+   * @param {string} entrantId the winning entrant's id (m.a.id | m.b.id)
+   */
+  function reportGame(matchId, entrantId) {
+    const m = findMatch(matchId);
+    if (!m || m.winner) return { ok: false };
+    const res = reportGameWin(bracket, matchId, entrantId);
+    if (!res.ok) return { ok: false };
+    dots.set(matchId, { a: 0, b: 0 });
+    current = nextToPlay(matchId);
+    return {
+      ok: true, matchDecided: !!res.decided,
+      current, grandFinals: isGrandFinals(), champion: bracket.champion,
+    };
+  }
+
   return {
     bracket,
     current: () => current,
     setCurrent: (m) => { current = m; },
     gameScore: (id) => ({ ...dotsFor(id) }),
     reportRoundWin,
+    reportGame,
     isGrandFinals,
     isComplete: () => isComplete(bracket),
   };
