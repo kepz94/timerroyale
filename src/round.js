@@ -20,12 +20,14 @@ export function isExact(elapsedMs, targetMs) {
   return Math.round(elapsedMs / 100) === Math.round(targetMs / 100);
 }
 
-// deadlineMs (TR-52, optional): an ABSOLUTE cutoff from round start after which
-// any still-running/waiting player is DNF'd — used by party Classic's 20s
-// hostage-prevention cutoff. When omitted the round keeps the original behavior
-// (a grace window of DNF_GRACE_MS past the target), so single-player and PvE are
-// unaffected.
-export function createRound({ db, room, players, targetMs, hard = false, onTv, deadlineMs }) {
+// perPlayerStopMs (TR-52, optional): when set, the DNF clock is PER PLAYER and
+// starts when that player taps START — each player gets perPlayerStopMs to STOP
+// (e.g. 30s), and a player who never starts is DNF'd perPlayerStopMs after the
+// round begins. When omitted the round keeps the original single grace window
+// (targetMs + DNF_GRACE_MS), so single-player and PvE are unaffected.
+// deadlineMs is still honored (absolute cap from begin) when perPlayerStopMs is
+// not given.
+export function createRound({ db, room, players, targetMs, hard = false, onTv, deadlineMs, perPlayerStopMs }) {
   // players: [{playerId, name}] — everyone in the lobby plays every round.
   let status = 'running'; // running | over
   const slots = new Map(players.map((p) => [p.playerId, {
@@ -37,8 +39,17 @@ export function createRound({ db, room, players, targetMs, hard = false, onTv, d
     elapsedMs: null,
     deviationMs: null
   }]));
-  let dnfTimer = null;
+  let dnfTimer = null;       // legacy single-deadline timer
+  let startDeadline = null;  // per-player mode: DNF players who never start
+  const stopTimers = new Map(); // per-player mode: playerId -> stop timeout
   const dnfDelayMs = deadlineMs != null ? deadlineMs : targetMs + DNF_GRACE_MS;
+
+  function clearTimers() {
+    clearTimeout(dnfTimer);
+    clearTimeout(startDeadline);
+    for (const t of stopTimers.values()) clearTimeout(t);
+    stopTimers.clear();
+  }
 
   function snapshotPlayers() {
     return Object.fromEntries([...slots.values()].map((s) => [s.playerId, { ...s }]));
@@ -74,7 +85,7 @@ export function createRound({ db, room, players, targetMs, hard = false, onTv, d
     const open = [...slots.values()].some((s) => s.state === 'waiting' || s.state === 'running');
     if (open || status !== 'running') return;
     status = 'over';
-    clearTimeout(dnfTimer);
+    clearTimers();
     publish();
     onTv?.state(getPublicState());
     const w = results()[0];
@@ -90,15 +101,28 @@ export function createRound({ db, room, players, targetMs, hard = false, onTv, d
     publish();
     onTv?.state(getPublicState());
     logTransition('round', 'ready', 'running', `target ${targetMs}ms, ${players.length} players`);
-    dnfTimer = setTimeout(() => {
-      for (const s of slots.values()) {
-        if (s.state === 'waiting' || s.state === 'running') {
-          logTransition('round', s.state, 'dnf', `${s.name}: deadline (${dnfDelayMs}ms from start)`);
-          s.state = 'dnf';
+    if (perPlayerStopMs != null) {
+      // A player who never even STARTS within the window is DNF'd (AFK guard).
+      startDeadline = setTimeout(() => {
+        for (const s of slots.values()) {
+          if (s.state === 'waiting') {
+            logTransition('round', 'waiting', 'dnf', `${s.name}: never started (${perPlayerStopMs}ms)`);
+            s.state = 'dnf';
+          }
         }
-      }
-      maybeFinish('DNF deadline');
-    }, dnfDelayMs);
+        maybeFinish('start deadline');
+      }, perPlayerStopMs);
+    } else {
+      dnfTimer = setTimeout(() => {
+        for (const s of slots.values()) {
+          if (s.state === 'waiting' || s.state === 'running') {
+            logTransition('round', s.state, 'dnf', `${s.name}: deadline (${dnfDelayMs}ms from start)`);
+            s.state = 'dnf';
+          }
+        }
+        maybeFinish('DNF deadline');
+      }, dnfDelayMs);
+    }
   }
 
   function handleEvent(ev) {
@@ -109,6 +133,16 @@ export function createRound({ db, room, players, targetMs, hard = false, onTv, d
       s.state = 'running';
       s.startClientTs = ev.clientTs;
       s.startHostTs = Date.now();
+      if (perPlayerStopMs != null) {
+        // This player now has perPlayerStopMs to STOP before a DNF.
+        stopTimers.set(s.playerId, setTimeout(() => {
+          if (s.state === 'running') {
+            logTransition('round', 'running', 'dnf', `${s.name}: stop timeout (${perPlayerStopMs}ms from start)`);
+            s.state = 'dnf';
+            maybeFinish(`${s.name} stop timeout`);
+          }
+        }, perPlayerStopMs));
+      }
       publish();
       onTv?.state(getPublicState());
       logTransition('round', 'waiting', 'running', `event ${ev.eventId}: ${s.name} started`);
@@ -116,6 +150,8 @@ export function createRound({ db, room, players, targetMs, hard = false, onTv, d
       s.state = 'stopped';
       s.elapsedMs = ev.clientTs - s.startClientTs; // same-device clock: fair
       s.deviationMs = Math.abs(s.elapsedMs - targetMs);
+      const t = stopTimers.get(s.playerId);
+      if (t) { clearTimeout(t); stopTimers.delete(s.playerId); }
       publish();
       onTv?.state(getPublicState());
       logTransition('round', 'running', 'stopped',

@@ -15,6 +15,9 @@ const db = initFirebase();
 const parts = location.pathname.split('/').filter(Boolean);
 const code = parts[1] ? parts[1].toUpperCase() : null;
 
+const fmt2 = (ms) => (ms / 1000).toFixed(2);
+const signed = (ms) => { const x = ms / 1000; return (x > 0 ? '+' : x < 0 ? '-' : '') + Math.abs(x).toFixed(2); };
+
 let currentUser = null;
 let me = null;
 let players = [];
@@ -22,6 +25,7 @@ let gameState = null;
 let matchState = null;
 
 async function boot() {
+  const rc = el('reconnect-btn'); if (rc) rc.addEventListener('click', () => location.reload());
   if (!code) { el('status').textContent = 'No lobby in this link.'; return; }
   el('room-banner').textContent = `Lobby ${code}`;
   const session = await getSession(db, code);
@@ -69,6 +73,7 @@ function renderDraftUI() {
   const d = matchState;
   el('draft-panel').hidden = false;
   el('big-press').hidden = true; el('dpad').hidden = true; el('next-round-btn').hidden = true;
+  if (el('result-panel')) el('result-panel').hidden = true;
   const iAmCaptain = (d.teams || []).some((t) => t.captainId === me?.playerId);
   const isMyPick = d.status === 'drafting' && d.teams?.[d.turn]?.captainId === me?.playerId;
   const pool = el('draft-pool'); pool.innerHTML = '';
@@ -98,6 +103,34 @@ function onJoined() { el('join-form').hidden = true; el('joined-panel').hidden =
 
 const hostPlayer = () => players.find((p) => p.uid);
 
+// The controller's result panel: "locked in" after you stop (blind), then the
+// full reveal (your time + deviation vs opponents + who won) once the round ends.
+function renderResult() {
+  const panel = el('result-panel');
+  if (!panel) return;
+  const g = gameState;
+  const mine = g && g.players ? g.players[me?.playerId] : null;
+  if (!g || g.mode !== 'target' || !mine) { panel.hidden = true; return; } // hard mode uses its own TV screen
+  if (g.status === 'over') {
+    const rows = Object.keys(g.players).map((id) => {
+      const s = g.players[id];
+      const t = s.state === 'stopped' ? `${fmt2(s.elapsedMs)}s (${signed(s.elapsedMs - g.targetMs)})` : s.state === 'dnf' ? 'DNF' : '—';
+      const win = g.winner && g.winner.playerId === id ? ' 🏆' : '';
+      const label = id === me.playerId ? 'You' : s.name;
+      return `<div class="res-row${id === me.playerId ? ' me' : ''}"><span>${label}${win}</span><span>${t}</span></div>`;
+    }).join('');
+    const iWon = g.winner && g.winner.playerId === me.playerId;
+    const title = iWon ? '🏆 You won the round!' : (g.winner ? 'You lost this round' : 'No winner this round');
+    panel.innerHTML = `<div class="res-title">${title}</div>${rows}`;
+    panel.hidden = false;
+  } else if (mine.state === 'stopped') {
+    panel.innerHTML = '<div class="res-title">🔒 Locked in</div><div class="res-sub">Waiting for the reveal on the TV…</div>';
+    panel.hidden = false;
+  } else {
+    panel.hidden = true;
+  }
+}
+
 function renderPhase() {
   if (matchState && matchState.type === 'draft') { renderDraftUI(); return; }
   if (el('draft-panel')) el('draft-panel').hidden = true;
@@ -119,6 +152,8 @@ function renderPhase() {
     else { btn.classList.remove('running'); btn.disabled = false; if (lbl) lbl.textContent = 'TAP TO START'; }
   }
   if (el('next-round-btn')) el('next-round-btn').hidden = !(iAmHost && phase === 'intermission');
+
+  renderResult();
 
   const banner = el('turn-banner');
   if (banner) {
