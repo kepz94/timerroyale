@@ -51,6 +51,32 @@ el('big-press').addEventListener('pointerdown', (e) => {
 });
 el('next-round-btn').addEventListener('click', () => { if (me) sendEvent(db, code, me.playerId, 'next'); });
 
+const nameOfLocal = (pid) => (players.find((p) => p.playerId === pid) || {}).name || pid;
+el('draft-name-form').addEventListener('submit', (e) => { e.preventDefault(); const v = el('draft-name-input').value.trim(); if (me && v) sendEvent(db, code, me.playerId, 'team-name', { name: v }); el('draft-name-input').value = ''; });
+document.querySelectorAll('#draft-emoji .emoji-btn').forEach((b) => b.addEventListener('click', () => { if (me) sendEvent(db, code, me.playerId, 'team-emoji', { emoji: b.textContent }); }));
+el('draft-start-btn').addEventListener('click', () => { if (me) sendEvent(db, code, me.playerId, 'draft-done'); });
+setInterval(() => { if (matchState && matchState.type === 'draft') renderDraftUI(); }, 1000);
+
+function renderDraftUI() {
+  const d = matchState;
+  el('draft-panel').hidden = false;
+  el('big-press').hidden = true; el('dpad').hidden = true; el('next-round-btn').hidden = true;
+  const iAmCaptain = (d.teams || []).some((t) => t.captainId === me?.playerId);
+  const isMyPick = d.status === 'drafting' && d.teams?.[d.turn]?.captainId === me?.playerId;
+  const pool = el('draft-pool'); pool.innerHTML = '';
+  el('draft-pool-label').hidden = !isMyPick;
+  if (isMyPick) (d.pool || []).forEach((pid) => { const btn = document.createElement('button'); btn.className = 'join-btn'; btn.textContent = `Draft ${nameOfLocal(pid)}`; btn.addEventListener('click', () => sendEvent(db, code, me.playerId, 'draft-pick', { pick: pid })); pool.appendChild(btn); });
+  const naming = d.status === 'naming' && iAmCaptain;
+  el('draft-name-form').hidden = !naming;
+  el('draft-emoji').hidden = !naming;
+  const host = hostPlayer(); const iAmHost = host && me && host.playerId === me.playerId;
+  el('draft-start-btn').hidden = !(iAmHost && d.status === 'naming');
+  const secs = d.deadline ? Math.max(0, Math.ceil((d.deadline - Date.now()) / 1000)) : 0;
+  el('turn-banner').textContent = d.status === 'drafting'
+    ? (isMyPick ? `📋 Your pick! (${secs}s) Tap a player below.` : `📋 Draft in progress — ${nameOfLocal(d.teams?.[d.turn]?.captainId)} picking… (${secs}s)`)
+    : (naming ? '🏷️ Name your team + pick an emoji.' : (iAmHost ? 'Captains are naming — tap Start Tournament when ready.' : 'Waiting for captains to name their teams…'));
+}
+
 el('join-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const check = validateName(el('name-input').value, players.map((p) => p.name));
@@ -65,6 +91,8 @@ function onJoined() { el('join-form').hidden = true; el('joined-panel').hidden =
 const hostPlayer = () => players.find((p) => p.uid);
 
 function renderPhase() {
+  if (matchState && matchState.type === 'draft') { renderDraftUI(); return; }
+  if (el('draft-panel')) el('draft-panel').hidden = true;
   const host = hostPlayer();
   const iAmHost = host && me && host.playerId === me.playerId;
   const active = gameState?.status === 'running';

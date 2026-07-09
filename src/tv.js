@@ -13,6 +13,8 @@ import { createKoth } from './koth.js';
 import { createMatch as createElim } from './elimination.js';
 import { createBracket, reportGameWin, activeMatches, isComplete, roundLabel } from './bracket.js';
 import { createTeamGame, distributeTeams } from './teamgame.js';
+import { createDraftState, applyPick, autoPick, draftTeams } from './draft.js';
+import { ref as dbRef, set as dbSet } from 'firebase/database';
 import { fmtOff, fmtS2 } from './format.js';
 
 const el = (id) => document.getElementById(id);
@@ -28,6 +30,9 @@ let engine = null;     // active round-composing engine (koth/elim/per-match kot
 let bracket = null;    // PvP/Teams tournament
 let curMatch = null;
 let isTeams = false;
+let draftState = null;
+let pickDeadline = 0;
+let draftClock = null;
 
 /* ---------------- Phase 1: highlight menu ---------------- */
 const config = { pool: { classic: true, hard: false, guess: false }, category: null, pveMode: 'koth', kothN: 5, numTeams: 2 };
@@ -139,7 +144,7 @@ function launchPvp() {
 
 function nextBracketMatch() {
   engine = null;
-  if (isComplete(bracket)) { renderBracket(); renderChampion(bracket.champion); return; }
+  if (isComplete(bracket)) { renderBracket(); renderChampion(bracket.champion); dbSet(dbRef(db, `sessions/${lobbyId}/match`), { type: 'tournament', status: 'complete' }).catch(() => {}); return; }
   curMatch = activeMatches(bracket)[0];
   renderBracket();
   el('tv-match-banner').textContent = isTeams ? 'Teams Tournament' : 'PvP Tournament';
@@ -169,13 +174,58 @@ function onPvpGame(m) {
 /* ---- Teams tournament ---- */
 function launchTeams() {
   const roster = activePlayers().map((p) => ({ playerId: p.playerId, name: p.name }));
-  const teams = distributeTeams(roster, config.numTeams);
-  if (teams.length < 2) return menuMsg('Need at least 2 teams (min 3 players).');
+  if (roster.length < 3) return menuMsg('Teams needs at least 3 players.');
   isTeams = true;
-  bracket = createBracket(teams.map((t) => ({ id: t.id, name: t.name, members: t.members })), { gamesToWin: 1 });
   showGame(true);
-  logTransition('tv', 'setup', 'teams-launch', `${teams.length} teams`);
+  draftState = createDraftState(roster, config.numTeams);
+  logTransition('tv', 'setup', 'draft-start', `${draftState.teams.length} teams`);
+  publishDraft(true);
+  renderDraft();
+}
+
+const nameOf = (pid) => (players.find((p) => p.playerId === pid) || {}).name || pid;
+
+function publishDraft(resetClock) {
+  if (resetClock && draftState.status === 'drafting') { pickDeadline = Date.now() + 20000; startClock(); }
+  if (draftState.status !== 'drafting') stopClock();
+  dbSet(dbRef(db, `sessions/${lobbyId}/match`), { ...draftState, deadline: draftState.status === 'drafting' ? pickDeadline : null }).catch(() => {});
+}
+function startClock() {
+  stopClock();
+  draftClock = setInterval(() => {
+    if (!draftState || draftState.status !== 'drafting') { stopClock(); return; }
+    if (Date.now() >= pickDeadline) { autoPick(draftState); publishDraft(true); }
+    renderDraft();
+  }, 500);
+}
+function stopClock() { if (draftClock) { clearInterval(draftClock); draftClock = null; } }
+function finalizeDraft() {
+  stopClock();
+  const teams = draftTeams(draftState, nameOf);
+  draftState = null;
+  bracket = createBracket(teams.map((t) => ({ id: t.id, name: `${t.emoji} ${t.name}`, members: t.members })), { gamesToWin: 1 });
+  dbSet(dbRef(db, `sessions/${lobbyId}/match`), { type: 'tournament', status: 'playing' }).catch(() => {});
+  logTransition('tv', 'draft', 'tournament-start', `${teams.length} teams`);
   nextBracketMatch();
+}
+function renderDraft() {
+  if (!draftState) return;
+  el('tv-match-banner').textContent = draftState.status === 'drafting' ? '📋 CAPTAIN DRAFT' : '🏷️ NAME YOUR TEAMS';
+  el('tv-target').innerHTML = '';
+  el('tv-round-rows').innerHTML = '';
+  const st = el('tv-standings'); st.innerHTML = '';
+  draftState.teams.forEach((t, i) => {
+    const li = document.createElement('li');
+    li.className = 'standing alive';
+    const turn = draftState.status === 'drafting' && i === draftState.turn ? '▶ ' : '';
+    li.textContent = `${turn}${t.emoji} ${t.name} — cap ${nameOf(t.captainId)}: ${t.members.map(nameOf).join(', ')}`;
+    st.appendChild(li);
+  });
+  if (draftState.pool.length) { const li = document.createElement('li'); li.className = 'standing out'; li.textContent = `Available: ${draftState.pool.map(nameOf).join(', ')}`; st.appendChild(li); }
+  el('tv-game-msg').classList.remove('final');
+  el('tv-game-msg').textContent = draftState.status === 'drafting'
+    ? `${nameOf(draftState.teams[draftState.turn].captainId)} is picking… (auto-pick in ${Math.max(0, Math.ceil((pickDeadline - Date.now()) / 1000))}s)`
+    : 'Captains: set team name + emoji on your phone, then the host starts the tournament.';
 }
 
 function startTeamMatch() {
@@ -292,6 +342,12 @@ async function boot() {
     render();
   });
   consumeEvents(db, lobbyId, (ev) => {
+    if (draftState) {
+      if (ev.type === 'draft-pick' && ev.pick) { if (applyPick(draftState, ev.playerId, ev.pick).ok) { publishDraft(true); renderDraft(); } return; }
+      if (ev.type === 'team-name' && typeof ev.name === 'string') { const t = draftState.teams.find((x) => x.captainId === ev.playerId); if (t && ev.name.trim()) { t.name = ev.name.trim().slice(0, 16); publishDraft(false); renderDraft(); } return; }
+      if (ev.type === 'team-emoji' && ev.emoji) { const t = draftState.teams.find((x) => x.captainId === ev.playerId); if (t) { t.emoji = ev.emoji; publishDraft(false); renderDraft(); } return; }
+      if (ev.type === 'draft-done' && ev.playerId === hostId && draftState.status === 'naming') { finalizeDraft(); return; }
+    }
     if (ev.type === 'nav' && !inGame && ev.playerId === hostId && ev.dir) { onNav(ev.dir); return; }
     if (ev.type === 'press' && engine) { engine.handleEvent(ev); return; }
     if (ev.type === 'next' && engine && ev.playerId === hostId && engine.isBetween()) { engine.nextRound(); return; }
