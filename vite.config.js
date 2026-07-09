@@ -9,7 +9,8 @@ export default defineConfig({
       input: {
         landing: resolve(__dirname, 'index.html'),
         host: resolve(__dirname, 'host.html'),
-        player: resolve(__dirname, 'player.html')
+        player: resolve(__dirname, 'player.html'),
+        match: resolve(__dirname, 'match.html')
       }
     }
   },

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TimerRoyale — 1v1 Challenge</title>
+    <meta name="theme-color" content="#050807" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body class="landing">
+    <div id="account-chip" class="account-chip">
+      <button id="auth-btn" class="join-btn auth-btn" type="button" hidden>Sign in</button>
+      <button id="auth-name" class="auth-name" type="button" title="Your profile" hidden></button>
+      <button id="signout-btn" class="auth-signout" type="button" hidden>Sign out</button>
+    </div>
+    <form id="username-form" class="join-form username-form" hidden>
+      <label for="username-input" class="join-label">Pick your username</label>
+      <input id="username-input" class="name-input" type="text" maxlength="16"
+             autocomplete="off" spellcheck="false" placeholder="e.g. Kepz" />
+      <button class="join-btn" type="submit">Claim it</button>
+      <p id="username-error" class="join-error" role="alert"></p>
+    </form>
+    <main id="app">
+      <h1>TimerRoyale</h1>
+      <p class="subtitle">1v1 Challenge</p>
+      <p id="m-status" class="players-label">Loading challenge…</p>
+
+      <section id="m-challenge" class="game-panel" hidden aria-label="Challenge">
+        <p id="m-challenge-info" class="game-msg"></p>
+        <p class="game-msg">One attempt — no do-overs. Land on the target, timing it blind.</p>
+        <button id="m-accept" class="join-btn menu-btn" type="button">Accept &amp; Play</button>
+        <p id="m-accept-msg" class="join-error" role="alert"></p>
+      </section>
+
+      <section id="m-play" class="game-panel" hidden aria-label="Your round">
+        <p id="m-round" class="players-label">Round 1</p>
+        <div class="target-row" id="m-target-row">
+          <div class="target-cell"><p class="target-label">Target</p>
+            <p id="m-target" class="timer-digits solo-digits">--<span class="timer-unit">s</span></p></div>
+          <div class="target-cell"><p class="target-label">You</p>
+            <p id="m-you" class="timer-digits solo-digits dim">--<span class="timer-unit">s</span></p></div>
+        </div>
+        <button id="m-big" class="big-btn" type="button"><span id="m-big-label">TAP TO START</span></button>
+        <p id="m-msg" class="game-msg"></p>
+        <form id="m-guess-form" class="join-form guess-form" hidden>
+          <label for="m-guess-input" class="join-label">How long was it? (seconds)</label>
+          <input id="m-guess-input" class="name-input code-input" type="text" inputmode="decimal"
+                 autocomplete="off" maxlength="5" placeholder="4.7" />
+          <button id="m-guess-submit" class="join-btn" type="submit">Lock it in</button>
+          <p id="m-guess-error" class="join-error" role="alert"></p>
+        </form>
+        <ul id="m-results" class="round-rows"></ul>
+      </section>
+
+      <section id="m-wait" class="game-panel" hidden aria-label="Waiting">
+        <p id="m-wait-score" class="timer-digits final-score"></p>
+        <p class="game-msg">Your round is locked in. Waiting for the host to play their half…</p>
+      </section>
+
+      <section id="m-result" class="game-panel" hidden aria-label="Result">
+        <p id="m-verdict" class="timer-digits final-score"></p>
+        <p id="m-result-detail" class="game-msg"></p>
+        <a class="join-btn menu-btn" href="/">Back to TimerRoyale</a>
+      </section>
+    </main>
+    <div id="flash" class="flash" aria-hidden="true"></div>
+    <script type="module" src="/src/match-page.js"></script>
+  </body>
+</html>

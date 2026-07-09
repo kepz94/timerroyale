@@ -54,6 +54,7 @@
         <p class="players-label">Host a game</p>
         <button id="host-party-btn" class="join-btn menu-btn" type="button">Party Mode — cast to TV</button>
         <button id="host-1v1-btn" class="join-btn menu-btn" type="button">1v1 Online Invite</button>
+        <button id="my-1v1s-btn" class="join-btn menu-btn" type="button">My 1v1s</button>
         <button id="host-choice-back" class="join-btn menu-btn menu-btn-alt" type="button">Back</button>
       </div>
 
@@ -61,10 +62,23 @@
         <p class="players-label">1v1 Invite — choose the mode pool</p>
         <label class="pool-opt"><input type="checkbox" id="pool-classic" checked /> Classic <small>— Get close!</small></label>
         <label class="pool-opt"><input type="checkbox" id="pool-guess" /> Guess Timer <small>— Trust your clock!</small></label>
-        <p class="game-msg">You play your half now; we generate an invite link for your challenger (valid 48h).</p>
-        <button id="host-1v1-play" class="join-btn menu-btn" type="button">Play &amp; Generate Challenge</button>
+        <p class="game-msg">We send the invite first. Your challenger plays their round, then you play your half — one shot each, no do-overs.</p>
+        <button id="host-1v1-play" class="join-btn menu-btn" type="button">Create &amp; Send Invite</button>
         <p id="host-1v1-msg" class="join-error" role="alert"></p>
+        <section id="host-1v1-result" class="join-panel" hidden>
+          <p class="players-label">Invite link (valid 48h)</p>
+          <p id="host-1v1-link" class="join-url"></p>
+          <button id="host-1v1-copy" class="join-btn menu-btn" type="button">Copy link</button>
+          <p class="game-msg">Share it. You'll play your half from “My 1v1s” once they finish.</p>
+        </section>
         <button id="host-1v1-back" class="join-btn menu-btn menu-btn-alt" type="button">Back</button>
+      </section>
+
+      <section id="my-1v1s-panel" class="game-panel" hidden aria-label="My 1v1 challenges">
+        <p class="players-label">My 1v1s</p>
+        <ul id="my-1v1s-list" class="round-rows"></ul>
+        <p id="my-1v1s-empty" class="players-empty">No 1v1s yet — create one from “1v1 Online Invite”.</p>
+        <button id="my-1v1s-back" class="join-btn menu-btn menu-btn-alt" type="button">Back</button>
       </section>
 
       <form id="join-code-form" class="join-form" hidden>
