@@ -6,7 +6,7 @@ import { ref as dbRef2, update as dbUpdate, get as dbGet2 } from 'firebase/datab
 import { DAILY_ROUNDS, dateKey, dailyTargets, todayResult, saveResult, msToMidnight, ratingColor } from './daily.js';
 import { createGuessSoloGame, GUESS_SOLO_ROUNDS } from './guesssolo.js';
 import { validatePool, resolveMode, ENVIRONMENTS } from './hostconfig.js';
-import { createMatch, getMatch, submitHostScore, seededTargets, lifecycle, awaitingHost, outcomeFor } from './match.js';
+import { createMatch, getMatch, submitHostScore, reconcileRecord, seededTargets, lifecycle, awaitingHost, outcomeFor } from './match.js';
 import { sfxStart, sfxStop } from './sfx.js';
 import { registerSW } from 'virtual:pwa-register';
 registerSW({ immediate: true });
@@ -39,10 +39,12 @@ watchAuth(refreshChip);
 
 el('auth-name').addEventListener('click', async () => {
   if (!currentUser) return;
-  const profile = await getProfile(db, currentUser.uid);
+  let profile = await getProfile(db, currentUser.uid);
   if (!profile) { el('username-form').hidden = false; el('username-input').focus(); return; }
   renderProfilePanel(profile);
   el('profile-panel').hidden = false;
+  // Recompute record + last-5 from completed matches (TR-36), then re-render.
+  try { await reconcileRecord(db, currentUser.uid); profile = await getProfile(db, currentUser.uid); renderProfilePanel(profile); } catch { /* offline: keep cached */ }
 });
 
 /* ---- Profile tab (TR-38) ---- */
@@ -87,6 +89,24 @@ function renderProfilePanel(profile) {
     li.innerHTML = `<span class="ach-name">${unlocked ? '🏅' : '🔒'} ${def.name}</span>` +
       `<small>${def.desc}${def.grantsBanner ? ` — unlocks the ${BANNERS[def.grantsBanner].name} banner` : ''}</small>`;
     list.appendChild(li);
+  }
+
+  const rl = el('recent-list');
+  if (rl) {
+    rl.innerHTML = '';
+    const recent = Array.isArray(profile.recent) ? profile.recent : [];
+    if (!recent.length) {
+      const li = document.createElement('li');
+      li.className = 'players-empty';
+      li.textContent = 'No 1v1s played yet.';
+      rl.appendChild(li);
+    } else for (const r of recent) {
+      const li = document.createElement('li');
+      const tag = r.outcome === 'w' ? 'WON' : r.outcome === 'l' ? 'lost' : 'draw';
+      li.className = 'round-row';
+      li.innerHTML = `<span class="row-name">${r.mode} vs ${r.opponent ?? '—'}</span><span class="row-time">${tag}</span>`;
+      rl.appendChild(li);
+    }
   }
 }
 
