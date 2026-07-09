@@ -47,8 +47,25 @@
         <button id="daily-btn" class="join-btn menu-btn" type="button">Daily Royale</button>
         <button id="guess-solo-btn" class="join-btn menu-btn" type="button">Guess Timer</button>
         <button id="join-game-btn" class="join-btn menu-btn menu-btn-alt" type="button">Join a Game</button>
-        <a id="host-link" class="join-btn menu-btn menu-btn-alt" href="/host.html">Host a Game</a>
+        <button id="host-link" class="join-btn menu-btn menu-btn-alt" type="button">Host a Game</button>
       </div>
+
+      <div id="host-choice" class="menu" hidden>
+        <p class="players-label">Host a game</p>
+        <button id="host-party-btn" class="join-btn menu-btn" type="button">Party Mode — cast to TV</button>
+        <button id="host-1v1-btn" class="join-btn menu-btn" type="button">1v1 Online Invite</button>
+        <button id="host-choice-back" class="join-btn menu-btn menu-btn-alt" type="button">Back</button>
+      </div>
+
+      <section id="host-1v1-panel" class="game-panel" hidden aria-label="1v1 invite setup">
+        <p class="players-label">1v1 Invite — choose the mode pool</p>
+        <label class="pool-opt"><input type="checkbox" id="pool-classic" checked /> Classic <small>— Get close!</small></label>
+        <label class="pool-opt"><input type="checkbox" id="pool-guess" /> Guess Timer <small>— Trust your clock!</small></label>
+        <p class="game-msg">You play your half now; we generate an invite link for your challenger (valid 48h).</p>
+        <button id="host-1v1-play" class="join-btn menu-btn" type="button">Play &amp; Generate Challenge</button>
+        <p id="host-1v1-msg" class="join-error" role="alert"></p>
+        <button id="host-1v1-back" class="join-btn menu-btn menu-btn-alt" type="button">Back</button>
+      </section>
 
       <form id="join-code-form" class="join-form" hidden>
         <label for="code-input" class="join-label">Room code (on the TV)</label>
