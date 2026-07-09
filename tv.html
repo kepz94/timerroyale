@@ -8,81 +8,114 @@
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="stylesheet" href="/src/style.css" />
     <style>
-      .tv-menu { max-width: 680px; margin: 1.5rem auto; }
+      .tv-menu { max-width: 46rem; margin: 1.5rem auto; }
       .tv-menu ul { list-style: none; padding: 0; margin: 0; }
-      .tv-menu li { padding: 0.7rem 1.2rem; margin: 0.3rem 0; font-size: 1.5rem;
+      .tv-menu li { padding: 0.7rem 1.2rem; margin: 0.35rem 0; font-size: clamp(1.4rem, 2.6vw, 2.4rem);
         font-family: "DSEG7-Classic", ui-monospace, monospace; letter-spacing: .04em;
         color: #7e967f; border-radius: 0.6rem; border: 2px solid transparent; white-space: pre; }
       .tv-menu li.focused { background: #0f2a1a; color: #4ade80; border-color: #22c55e;
         box-shadow: 0 0 18px rgba(34,197,94,0.35); }
       .tv-menu .tv-menu-msg { color: #f0b429; margin-top: 0.8rem; min-height: 1.2em; }
 
-      /* TR-52: distinct TV state screens (Active / Reveal / Bracket) */
-      .tv-state { display: grid; gap: var(--gap); }
-      .tv-turn { font-size: var(--fs-small); text-transform: uppercase; letter-spacing: .22em;
-        color: var(--text-dim); min-height: 1.2em; }
-      .tv-ledger { display: flex; justify-content: center; gap: 2.5rem; flex-wrap: wrap; margin: .2rem 0 .4rem; }
-      .tv-ledger .team { display: grid; justify-items: center; gap: .2rem; }
-      .tv-ledger .team .name { font-size: var(--fs-small); color: var(--text-dim);
-        text-transform: uppercase; letter-spacing: .12em; }
-      .tv-ledger .team .dot-strip { font-size: 1.7rem; letter-spacing: .18em; }
+      /* ============================================================
+         TR-52: TV-FIRST GAMEBOARD — sized for a couch, not a phone.
+         Everything scales with the viewport so it fills a real TV.
+         ============================================================ */
+      body.host.playing { display: block; }
+      body.host.playing #app { max-width: 100%; width: 100%; margin: 0; padding: 0; }
+      body.host.playing h1, body.host.playing .subtitle { display: none; }
 
-      .reveal-head { font-size: var(--fs-title); font-weight: 800; letter-spacing: .16em;
-        color: var(--accent); text-transform: uppercase; }
-      .reveal-sub { color: var(--text-dim); letter-spacing: .22em; text-transform: uppercase;
-        font-size: var(--fs-small); min-height: 1.1em; }
-      .reveal-cards { display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap; margin: .6rem auto; }
+      #tv-game { display: grid; gap: 1vh; width: 100%; min-height: 100vh;
+        align-content: center; justify-items: center; padding: 2vh 3vw; box-sizing: border-box; }
+      #tv-match-banner { font-size: clamp(1.3rem, 2.6vw, 3.2rem); font-weight: 800; color: var(--accent);
+        text-transform: uppercase; letter-spacing: .1em; max-width: 94vw; line-height: 1.15; }
+      #tv-game .target-label { font-size: clamp(1rem, 1.8vw, 1.8rem); letter-spacing: .25em; }
+      #tv-game #tv-target, #tv-game .timer-digits { font-size: clamp(4rem, 13vw, 15rem); line-height: .95; }
+      .timer-unit { font-size: 0.35em; }
+
+      /* Ledger dots */
+      .tv-ledger { display: flex; justify-content: center; gap: clamp(1.5rem, 5vw, 6rem); flex-wrap: wrap; }
+      .tv-ledger .team { display: grid; justify-items: center; gap: .3rem; }
+      .tv-ledger .team .name { font-size: clamp(1rem, 2vw, 2.2rem); color: var(--text-dim);
+        text-transform: uppercase; letter-spacing: .12em; }
+      .tv-ledger .team .dot-strip { font-size: clamp(2.2rem, 4.6vw, 5rem); letter-spacing: .12em; }
+      .tv-turn { font-size: clamp(1.1rem, 2.2vw, 2.4rem); text-transform: uppercase;
+        letter-spacing: .22em; color: var(--text-dim); }
+
+      /* Reveal screen */
+      .tv-state { display: grid; gap: 1.2vh; justify-items: center; width: 100%; }
+      .reveal-head { font-size: clamp(2.2rem, 5vw, 5rem); font-weight: 800; letter-spacing: .12em;
+        color: var(--accent); text-transform: uppercase; max-width: 94vw; }
+      .reveal-sub { font-size: clamp(1rem, 2vw, 2rem); color: var(--text-dim);
+        letter-spacing: .22em; text-transform: uppercase; }
+      .reveal-cards { display: flex; justify-content: center; gap: clamp(1.5rem, 4vw, 4rem); flex-wrap: wrap; }
       .reveal-card { background: var(--surface-raised); border-radius: var(--radius);
-        padding: 1.2rem 2rem; min-width: 13rem; border: 3px solid transparent;
-        transition: border-color .2s, box-shadow .2s; }
-      .reveal-card .rc-team { font-size: var(--fs-small); color: var(--text-dim);
-        text-transform: uppercase; letter-spacing: .16em; min-height: 1em; }
-      .reveal-card .rc-name { font-weight: 800; font-size: var(--fs-body); margin-bottom: .4rem; }
-      .reveal-card .rc-time { font-size: var(--fs-hero); font-weight: 800;
+        padding: clamp(.9rem, 2.4vh, 2.4rem) clamp(1.6rem, 4vw, 4.5rem);
+        min-width: clamp(12rem, 24vw, 30rem); border: 5px solid transparent; }
+      .reveal-card .rc-team { font-size: clamp(1rem, 2vw, 2.2rem); color: var(--text-dim);
+        text-transform: uppercase; letter-spacing: .16em; }
+      .reveal-card .rc-name { font-weight: 800; font-size: clamp(1.5rem, 3.2vw, 3.2rem); margin: .25rem 0 .4rem; }
+      .reveal-card .rc-time { font-size: clamp(3.2rem, 9vw, 9.5rem); font-weight: 800;
         font-variant-numeric: tabular-nums; line-height: 1; }
-      .reveal-card .rc-dev { color: var(--text-dim); font-size: var(--fs-small);
+      .reveal-card .rc-dev { font-size: clamp(1rem, 2.2vw, 2.2rem); color: var(--text-dim);
         margin-top: .35rem; letter-spacing: .05em; }
-      .reveal-card.win { border-color: var(--win); box-shadow: 0 0 26px rgba(74,222,128,.35); }
-      .reveal-card.clutch { border-color: #f0b429; box-shadow: 0 0 32px rgba(240,180,41,.5);
+      .reveal-card.win { border-color: var(--win); box-shadow: 0 0 40px rgba(74,222,128,.4); }
+      .reveal-card.clutch { border-color: #f0b429; box-shadow: 0 0 48px rgba(240,180,41,.55);
         animation: clutchPulse .8s ease-in-out infinite alternate; }
       .reveal-card.dnf { opacity: .55; animation: shatter .5s ease-out; }
       .reveal-card.dnf .rc-time { color: var(--state-eliminated); }
       @keyframes clutchPulse { from { transform: scale(1); } to { transform: scale(1.05); } }
       @keyframes shatter { 0% { transform: translateX(0) rotate(0); }
-        20% { transform: translateX(-7px) rotate(-2.5deg); }
-        45% { transform: translateX(6px) rotate(2deg); }
-        70% { transform: translateX(-3px) rotate(-1deg); }
+        20% { transform: translateX(-10px) rotate(-2.5deg); }
+        45% { transform: translateX(9px) rotate(2deg); }
+        70% { transform: translateX(-4px) rotate(-1deg); }
         100% { transform: translateX(0) rotate(0); } }
-      .reveal-winner { font-size: var(--fs-title); font-weight: 800; color: var(--win);
-        letter-spacing: .04em; min-height: 1.3em; }
+      .reveal-winner { font-size: clamp(1.9rem, 4.4vw, 4.6rem); font-weight: 800; color: var(--win);
+        letter-spacing: .03em; max-width: 94vw; }
       .reveal-winner.clutch { color: #f0b429; }
-      .rotation-banner { color: #f0b429; font-weight: 700; letter-spacing: .04em; min-height: 1.2em; }
 
-      /* TR-52 §5: Hard Classic retry-loop screen (attempt history + success) */
-      #hard-target { font-size: clamp(2.5rem, 7vw, 5rem); font-weight: 800;
+      /* Live status rows */
+      #tv-round-rows.round-rows { max-width: min(56rem, 80vw); gap: clamp(.5rem, 1vh, 1rem); }
+      #tv-game .round-row { font-size: clamp(1.4rem, 3vw, 3rem);
+        padding: clamp(.6rem, 1.4vh, 1.4rem) clamp(1.2rem, 2.5vw, 2.5rem); }
+      #tv-game .deviation { font-size: clamp(1rem, 2.1vw, 2.1rem); }
+      #tv-game-msg.game-msg { font-size: clamp(1.4rem, 3vw, 3rem); }
+      #tv-game-msg.game-msg.final { font-size: clamp(2.4rem, 5.5vw, 5.5rem); }
+      .rotation-banner { color: #f0b429; font-weight: 700; letter-spacing: .03em;
+        font-size: clamp(1.3rem, 2.8vw, 2.8rem); }
+
+      /* Hard Classic screen */
+      #hard-target { font-size: clamp(3.5rem, 10vw, 11rem); font-weight: 800;
         font-variant-numeric: tabular-nums; color: var(--text); line-height: 1; }
-      #hard-zone { color: var(--text-dim); font-size: var(--fs-small); letter-spacing: .1em;
-        text-transform: uppercase; }
-      #hard-history { max-width: 40rem; }
-      .round-row.hit { border-left: 4px solid var(--win); color: var(--win); }
-      .round-row.dnf { border-left: 4px solid var(--danger); }
+      #hard-zone { color: var(--text-dim); font-size: clamp(1rem, 2.2vw, 2.2rem);
+        letter-spacing: .1em; text-transform: uppercase; }
+      #hard-history { max-width: min(56rem, 80vw); }
+      #tv-game .round-row.hit { border-left: 5px solid var(--win); color: var(--win); }
+      #tv-game .round-row.dnf { border-left: 5px solid var(--danger); }
 
-      /* TR-52 State 6: the tournament bracket tree (game-intermission takeover) */
-      .tv-bracket { display: flex; gap: 1.5rem; justify-content: center; align-items: center;
-        flex-wrap: wrap; margin: 1rem auto; }
-      .bkt-col { display: flex; flex-direction: column; gap: 1rem; justify-content: center; }
-      .bkt-col-head { font-size: var(--fs-small); color: var(--text-dim); text-transform: uppercase;
-        letter-spacing: .15em; text-align: center; margin-bottom: .2rem; }
+      /* Tournament bracket tree */
+      .tv-bracket { display: flex; gap: clamp(1rem, 3vw, 3rem); justify-content: center;
+        align-items: center; flex-wrap: wrap; }
+      .bkt-col { display: flex; flex-direction: column; gap: clamp(.8rem, 2vh, 2rem); justify-content: center; }
+      .bkt-col-head { font-size: clamp(1rem, 2vw, 2.2rem); color: var(--text-dim);
+        text-transform: uppercase; letter-spacing: .15em; text-align: center; }
       .bkt-match { background: var(--surface-raised); border-radius: var(--radius);
-        padding: .5rem .9rem; min-width: 12rem; border-left: 4px solid transparent; }
-      .bkt-match.current { border-left-color: #f0b429; box-shadow: 0 0 16px rgba(240,180,41,.3); }
+        padding: clamp(.6rem, 1.3vh, 1.4rem) clamp(1rem, 1.8vw, 1.8rem);
+        min-width: clamp(11rem, 20vw, 26rem); border-left: 5px solid transparent; }
+      .bkt-match.current { border-left-color: #f0b429; box-shadow: 0 0 20px rgba(240,180,41,.35); }
       .bkt-slot { display: flex; justify-content: space-between; gap: 1rem;
-        font-size: var(--fs-small); padding: .18rem 0; }
+        font-size: clamp(1.3rem, 2.4vw, 2.6rem); padding: .2rem 0; }
       .bkt-slot.winner { color: var(--win); font-weight: 800; }
       .bkt-slot .games { font-variant-numeric: tabular-nums; color: var(--text-dim); }
-      .bkt-champ { text-align: center; padding: .5rem 1rem; }
-      .bkt-champ .lbl { font-size: 1.6rem; }
-      .bkt-champ .who { font-size: var(--fs-body); font-weight: 800; color: var(--win); }
+      .bkt-champ { text-align: center; }
+      .bkt-champ .lbl { font-size: clamp(2rem, 4vw, 4rem); }
+      .bkt-champ .who { font-size: clamp(1.6rem, 3vw, 3.2rem); font-weight: 800; color: var(--win); }
+
+      /* Reconnect — always reachable if a screen freezes */
+      #tv-reconnect { position: fixed; top: 1rem; right: 1rem; z-index: 60;
+        background: #12321c; color: #4ade80; border: 2px solid #22c55e; border-radius: .6rem;
+        font-size: clamp(.9rem, 1.6vw, 1.4rem); padding: .5rem 1rem; cursor: pointer; opacity: .8; }
+      #tv-reconnect:hover { opacity: 1; }
 
       /* Flash overlays (Guess start/stop cues, ready for wiring) */
       #tv-flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 50; }
@@ -92,6 +125,7 @@
     </style>
   </head>
   <body class="host">
+    <button id="tv-reconnect" type="button" title="Reload if the screen freezes">⟳ Reconnect</button>
     <div id="tv-flash"></div>
     <main id="app" class="lobby">
       <h1>TimerRoyale</h1>
