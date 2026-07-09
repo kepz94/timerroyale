@@ -312,7 +312,7 @@ function renderGuess(g, teamCtx) {
   if (g.status === 'over') {
     el('guess-head').textContent = 'THE REVEAL';
     actual.hidden = false;
-    actual.innerHTML = `ACTUAL ${fmtS2(g.actualMs)}<span class="timer-unit">s</span>`;
+    actual.innerHTML = `ACTUAL ${fmtS(g.actualMs)}<span class="timer-unit">s</span>`;
     cards.innerHTML = '';
     ids.forEach((id, i) => {
       const s = g.players[id];
@@ -741,7 +741,7 @@ async function boot() {
       if (ev.type === 'draft-done' && ev.playerId === hostId && draftState.status === 'naming') { finalizeDraft(); return; }
     }
     if (ev.type === 'nav' && !inGame && ev.playerId === hostId && ev.dir) { onNav(ev.dir); return; }
-    if (ev.type === 'press' && engine) { engine.handleEvent(ev); return; }
+    if ((ev.type === 'press' || ev.type === 'guess') && engine) { engine.handleEvent(ev); return; }
     if (ev.type === 'next' && !engine && awaitingNextGame && ev.playerId === hostId) { awaitingNextGame = false; if (isTeams) startTeamMatch(); else startBracketGame(); return; }
     if (ev.type === 'next' && engine && ev.playerId === hostId && engine.isBetween()) { engine.nextRound(); return; }
   });

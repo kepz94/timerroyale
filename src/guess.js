@@ -86,7 +86,7 @@ export function createGuessRound({ db, room, players, targetMs, onTv, onMoment }
       onTv?.state(publicState());
       logTransition('guess', 'get-ready', 'interval', 'start cue fired');
       setTimeout(() => {
-        actualMs = Math.round(performance.now() - t0); // measured truth, not intent
+        actualMs = Math.round((performance.now() - t0) / 100) * 100; // measured, snapped to 0.1s
         onMoment?.('stop');
         status = 'guessing';
         publish();

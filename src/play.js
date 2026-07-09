@@ -24,6 +24,8 @@ let players = [];
 let gameState = null;
 let matchState = null;
 let guessDigits = '';
+let guessSubmitted = false; // optimistic "locked in" feedback
+let lastGuess = '';
 
 async function boot() {
   const rc = el('reconnect-btn'); if (rc) rc.addEventListener('click', () => location.reload());
@@ -78,7 +80,9 @@ el('guess-submit')?.addEventListener('click', () => {
   if (!me || !Number.isFinite(secs) || secs <= 0) return;
   sendEvent(db, code, me.playerId, 'guess', { value: Math.round(secs * 1000) });
   if (navigator.vibrate) navigator.vibrate(30);
+  lastGuess = secs.toFixed(2); guessSubmitted = true; // instant confirmation
   guessDigits = ''; updateGuessDisplay();
+  renderGuessPhone();
 });
 
 const nameOfLocal = (pid) => (players.find((p) => p.playerId === pid) || {}).name || pid;
@@ -158,17 +162,17 @@ function renderGuessPhone() {
   const mine = g && g.players ? g.players[me?.playerId] : null;
   const banner = el('turn-banner');
   if (!mine) { panel.hidden = true; if (banner) banner.textContent = '👀 Watch the TV — guess round in progress!'; return; }
-  if (g.status === 'guessing' && mine.state !== 'guessed') {
+  if (g.status === 'guessing' && mine.state !== 'guessed' && !guessSubmitted) {
     panel.hidden = false;
     el('guess-phone-status').textContent = '🚨 How long was the timer? Type your guess:';
-  } else if (g.status === 'guessing' && mine.state === 'guessed') {
+  } else if (g.status === 'guessing' && (mine.state === 'guessed' || guessSubmitted)) {
     panel.hidden = true;
-    if (banner) banner.textContent = '🔒 Locked in — watch the reveal on the TV!';
+    if (banner) banner.textContent = `🔒 Locked in${lastGuess ? `: ${lastGuess}s` : ''} — watch the reveal!`;
   } else if (g.status === 'over') {
-    panel.hidden = true; guessDigits = ''; updateGuessDisplay();
+    panel.hidden = true; guessSubmitted = false; lastGuess = ''; guessDigits = ''; updateGuessDisplay();
     if (banner) banner.textContent = '👀 Check the reveal on the TV!';
   } else { // ready | get-ready | interval
-    panel.hidden = true;
+    panel.hidden = true; guessSubmitted = false; lastGuess = '';
     if (banner) banner.textContent = '👂 Watch & listen — the timer is running (hidden)!';
   }
 }
