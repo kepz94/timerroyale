@@ -7,6 +7,16 @@
     <meta name="theme-color" content="#050807" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="stylesheet" href="/src/style.css" />
+    <style>
+      .tv-menu { max-width: 680px; margin: 1.5rem auto; }
+      .tv-menu ul { list-style: none; padding: 0; margin: 0; }
+      .tv-menu li { padding: 0.7rem 1.2rem; margin: 0.3rem 0; font-size: 1.5rem;
+        font-family: "DSEG7-Classic", ui-monospace, monospace; letter-spacing: .04em;
+        color: #7e967f; border-radius: 0.6rem; border: 2px solid transparent; white-space: pre; }
+      .tv-menu li.focused { background: #0f2a1a; color: #4ade80; border-color: #22c55e;
+        box-shadow: 0 0 18px rgba(34,197,94,0.35); }
+      .tv-menu .tv-menu-msg { color: #f0b429; margin-top: 0.8rem; min-height: 1.2em; }
+    </style>
   </head>
   <body class="host">
     <main id="app" class="lobby">
@@ -24,6 +34,11 @@
         <p class="players-label">Players (⭐ = signed-in host)</p>
         <ul id="player-list" class="player-list"></ul>
         <p id="players-empty" class="players-empty">No one has joined yet</p>
+      </section>
+      <section id="tv-menu" class="tv-menu" hidden aria-label="Host setup">
+        <p class="players-label">Host setup — drive this with your phone remote</p>
+        <ul id="tv-menu-list"></ul>
+        <p id="tv-menu-msg" class="tv-menu-msg"></p>
       </section>
       <p id="status">Creating room…</p>
     </main>

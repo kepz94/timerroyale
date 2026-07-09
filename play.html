@@ -7,6 +7,17 @@
     <meta name="theme-color" content="#050807" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="stylesheet" href="/src/style.css" />
+    <style>
+      .dpad { display: grid; grid-template-columns: repeat(3, 4.5rem); grid-auto-rows: 4.5rem;
+        gap: 0.5rem; justify-content: center; margin: 1.2rem auto; }
+      .dpad-btn { font-size: 1.4rem; border-radius: 0.7rem; border: 1px solid #22c55e;
+        background: #0d1f14; color: #4ade80; touch-action: manipulation; }
+      .dpad-btn:active { background: #12321c; }
+      .dpad .up { grid-column: 2; grid-row: 1; } .dpad .left { grid-column: 1; grid-row: 2; }
+      .dpad .right { grid-column: 3; grid-row: 2; } .dpad .down { grid-column: 2; grid-row: 3; }
+      .dpad .back { grid-column: 1 / 2; grid-row: 4; font-size: 1rem; }
+      .dpad .select { grid-column: 2 / 4; grid-row: 4; background: #12321c; font-size: 1rem; }
+    </style>
   </head>
   <body class="player">
     <div id="account-chip" class="account-chip">
@@ -27,6 +38,14 @@
       <div id="joined-panel" class="joined-panel" hidden>
         <p id="joined-name" class="joined-name"></p>
         <p id="turn-banner" class="turn-banner"></p>
+        <div id="dpad" class="dpad" hidden aria-label="Host remote">
+          <button class="dpad-btn up" data-dir="up" type="button">▲</button>
+          <button class="dpad-btn left" data-dir="left" type="button">◀</button>
+          <button class="dpad-btn right" data-dir="right" type="button">▶</button>
+          <button class="dpad-btn down" data-dir="down" type="button">▼</button>
+          <button class="dpad-btn back" data-dir="back" type="button">BACK</button>
+          <button class="dpad-btn select" data-dir="select" type="button">SELECT</button>
+        </div>
         <p class="players-label">In this lobby</p>
         <ul id="player-list" class="player-list"></ul>
       </div>
