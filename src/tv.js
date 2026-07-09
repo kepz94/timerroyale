@@ -183,8 +183,11 @@ function fillRows(g, labelById) {
   order.forEach((id) => {
     const s = g.players[id];
     const li = document.createElement('li'); li.className = `round-row ${s.state}`;
+    // TR-52 blind reveal: keep recorded times hidden until the round is over.
     const time = s.state === 'stopped'
-      ? `${fmtS2(s.elapsedMs)}s <span class="deviation">Δ ${fmtSigned(s.elapsedMs - g.targetMs)}s</span>`
+      ? (g.status === 'over'
+          ? `${fmtS2(s.elapsedMs)}s <span class="deviation">Δ ${fmtSigned(s.elapsedMs - g.targetMs)}s</span>`
+          : '🔒 Locked in')
       : s.state === 'dnf' ? 'DNF' : s.state === 'running' ? '⏱…' : '—';
     const medal = g.status === 'over' && g.ranking?.[0] === id ? '🏆 ' : '';
     const lbl = labelById && labelById[id] ? `${labelById[id]}: ` : '';
@@ -237,6 +240,7 @@ function startGame() {
 
 function showGame(on) {
   inGame = on;
+  document.body.classList.toggle('playing', on); // TV-first full-screen layout
   el('tv-game').hidden = !on;
   el('tv-menu').hidden = on || !hostId;
   document.querySelector('.join-panel').hidden = on;
@@ -497,6 +501,7 @@ function renderChampion(c) {
 
 /* ---------------- boot ---------------- */
 async function boot() {
+  el('tv-reconnect').addEventListener('click', () => location.reload());
   if (!lobbyId) { const { code } = await createSession(db); logTransition('tv', 'boot', 'created', `room ${code}`); location.replace(`/tv/${code}`); return; }
   el('room-code').textContent = lobbyId;
   const joinUrl = `${location.origin}/play/${lobbyId}`;
