@@ -13,7 +13,7 @@ import { initFirebase } from './firebase.js';
 import { createSession, logTransition } from './session.js';
 import { watchPlayers } from './players.js';
 import { consumeEvents } from './engine.js';
-import { validatePool, validateCategory, ENVIRONMENTS, KOTH_THRESHOLDS } from './hostconfig.js';
+import { validatePool, validateCategory, resolveMode, ENVIRONMENTS, KOTH_THRESHOLDS } from './hostconfig.js';
 import { createKoth } from './koth.js';
 import { createMatch as createElim } from './elimination.js';
 import { createBracket, reportGameWin, activeMatches, isComplete, roundLabel } from './bracket.js';
@@ -47,6 +47,7 @@ let draftState = null;
 let clockTimer = null;         // live TV clock loop (team tournaments)
 let currentScreen = null;      // for the per-round hint splash
 let hintTimer = null;
+let audioCtx = null, soundOn = false; // TV audio (unlocked by the Enable-sound tap)
 let pickDeadline = 0;
 let draftClock = null;
 
@@ -127,6 +128,7 @@ function showRoundHint(s) {
 
 function showScreen(s) {
   const entering = (s === 'active' || s === 'hard') && currentScreen !== 'active' && currentScreen !== 'hard';
+  const enteringReveal = s === 'reveal' && currentScreen !== 'reveal';
   currentScreen = s;
   el('tv-active').hidden = s !== 'active';
   el('tv-reveal').hidden = s !== 'reveal';
@@ -137,6 +139,7 @@ function showScreen(s) {
   if (s === 'reveal' || s === 'hard' || s === 'bracket' || s === 'guess') el('tv-standings').hidden = true;
   if (s === 'bracket') { el('tv-ledger').hidden = true; el('tv-turn').hidden = true; }
   if (entering) showRoundHint(s);
+  if (enteringReveal) chime();
 }
 
 // TR-52 §5: the Hard Classic retry-loop screen — live attempt history while the
@@ -165,6 +168,7 @@ function renderHard(g, teamCtx) {
     el('hard-zone').textContent = `MATCH ZONE ${fmtS2(zoneLo)}s – ${fmtS2(zoneHi)}s`;
     el('hard-history').innerHTML = '';
     el('hard-winner').textContent = w ? `🏆 ${teamNameFor(w.playerId) || w.name} wins the round! (+1 ledger dot)` : '';
+    if (w && cleanHit) chime();
     el('hard-representing').textContent = '';
   } else {
     const aid = g.activeId;
@@ -236,12 +240,33 @@ function fillRows(g, labelById) {
   });
 }
 
-// Guess Timer start/stop sensory cue (green flash on start, red on stop).
+// TV audio (Web Audio). A passive cast screen can't autoplay sound, so the host
+// taps "Enable sound" once to unlock the context; everything is a no-op until then.
+function beep(freq, durMs, vol = 0.22) {
+  if (!soundOn || !audioCtx) return;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = 'square'; o.frequency.value = freq;
+  o.connect(g); g.connect(audioCtx.destination);
+  const t = audioCtx.currentTime;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + durMs / 1000);
+  o.start(t); o.stop(t + durMs / 1000);
+}
+function chime() { beep(660, 120); setTimeout(() => beep(990, 200), 130); }
+function enableSound() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx.resume(); soundOn = true;
+    const b = el('tv-sound'); if (b) { b.textContent = '🔊 Sound on'; b.style.opacity = '.5'; }
+    beep(880, 120);
+  } catch { /* audio unavailable */ }
+}
+
+// Guess Timer start/stop sensory cue: green flash + high beep (start),
+// red flash + low beep (stop).
 function flashCue(kind) {
-  const f = el('tv-flash'); if (!f) return;
-  f.classList.remove('green', 'red'); void f.offsetWidth;
-  f.classList.add(kind === 'start' ? 'green' : 'red');
-  setTimeout(() => f.classList.remove('green', 'red'), 500);
+  const f = el('tv-flash');
+  if (f) { f.classList.remove('green', 'red'); void f.offsetWidth; f.classList.add(kind === 'start' ? 'green' : 'red'); setTimeout(() => f.classList.remove('green', 'red'), 500); }
+  beep(kind === 'start' ? 880 : 330, kind === 'start' ? 160 : 260);
 }
 
 // Guess Timer phase screens: observation (clock hidden) -> suspense (locking in)
@@ -270,6 +295,7 @@ function renderGuess(g, teamCtx) {
       cards.appendChild(card);
     });
     el('guess-winner').textContent = g.winner ? `🏆 ${labelFor(g.winner.playerId, ids.indexOf(g.winner.playerId))} wins the round! (+1)` : 'No winner';
+    if (g.winner) chime();
   } else if (g.status === 'guessing') {
     el('guess-head').textContent = '🚨 TIME IS UP — SUBMIT YOUR GUESS!';
     actual.hidden = true;
@@ -407,8 +433,9 @@ function startBracketGame() {
   const two = [{ playerId: curMatch.a.id, name: curMatch.a.name }, { playerId: curMatch.b.id, name: curMatch.b.name }];
   // A GAME = first to ROUNDS_TO_WIN_GAME round-wins (TR-52). Party Classic opts
   // into the dead-heat void + 20s hostage cutoff (Hard runs exact-hit as-is).
-  const guessOnly = !!config.pool.guess && !config.pool.classic && !config.pool.hard;
-  engine = createKoth({ db, room: lobbyId, players: two, n: ROUNDS_TO_WIN_GAME, hard: !!config.pool.hard, hardLoop: !!config.pool.hard, guessLoop: guessOnly, onMoment: flashCue, deadHeatVoid: !config.pool.hard && !guessOnly, perPlayerStopMs: 30000, targetFn: config.pool.hard ? undefined : createClassicTargets(), onTv: { state: renderRound }, onMatch: onPvpGame });
+  const pool = Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
+  const matchExtra = { snapshot: serializeTournament(tourney.bracket, curMatch), teams: !!isTeams, hard: !!config.pool.hard };
+  engine = createKoth({ db, room: lobbyId, players: two, n: ROUNDS_TO_WIN_GAME, roundKindFn: () => resolveMode(pool), deadHeatVoid: true, perPlayerStopMs: 30000, targetFn: createClassicTargets(), onMoment: flashCue, matchExtra, onTv: { state: renderRound }, onMatch: onPvpGame });
   engine.nextRound();
 }
 
@@ -487,12 +514,11 @@ function startTeamMatch() {
   const teamA = curMatch.a, teamB = curMatch.b; // entrants carry {id,name,members}
   // A GAME = first to ROUNDS_TO_WIN_GAME round-wins; active member rotates each
   // round (solo team plays every round — the 2v1 fairness rule in teamgame.js).
-  const guessOnly = !!config.pool.guess && !config.pool.classic && !config.pool.hard;
+  const pool = Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
   engine = createTeamGame({
-    db, room: lobbyId, teamA, teamB, n: ROUNDS_TO_WIN_GAME, hard: !!config.pool.hard,
-    hardLoop: !!config.pool.hard, guessLoop: guessOnly, onMoment: flashCue,
-    deadHeatVoid: !config.pool.hard && !guessOnly,
-    perPlayerStopMs: 30000, targetFn: config.pool.hard ? undefined : createClassicTargets(),
+    db, room: lobbyId, teamA, teamB, n: ROUNDS_TO_WIN_GAME,
+    roundKindFn: () => resolveMode(pool), onMoment: flashCue, deadHeatVoid: true,
+    perPlayerStopMs: 30000, targetFn: createClassicTargets(),
     onTv: { state: (g, ctx) => renderTeamRound(g, ctx) },
     onGame: (r) => {
       if (r.status === 'tie-void') { el('tv-game-msg').classList.remove('final'); el('tv-game-msg').textContent = '🟰 TIE GAME — RESETTING with a new target…'; return; }
@@ -637,6 +663,7 @@ function renderChampion(c) {
 /* ---------------- boot ---------------- */
 async function boot() {
   el('tv-reconnect').addEventListener('click', () => location.reload());
+  el('tv-sound')?.addEventListener('click', enableSound);
   if (!lobbyId) { const { code } = await createSession(db); logTransition('tv', 'boot', 'created', `room ${code}`); location.replace(`/tv/${code}`); return; }
   el('room-code').textContent = lobbyId;
   const joinUrl = `${location.origin}/play/${lobbyId}`;
@@ -665,11 +692,14 @@ async function boot() {
     if (ev.type === 'next' && engine && ev.playerId === hostId && engine.isBetween()) { engine.nextRound(); return; }
   });
   // Resume a tournament in progress if the TV reloaded mid-game (reconnect).
+  // The snapshot rides in the match node from ANY point: persistTournament writes
+  // it between games; koth carries it (matchExtra) during a PvP game; teamgame
+  // leaves the between-games snapshot intact. The current game restarts 0-0.
   try {
-    const snap = (await dbGet(dbRef(db, `sessions/${lobbyId}/match`))).val();
-    if (snap && snap.type === 'tournament' && snap.status === 'playing' && snap.snapshot && snap.snapshot.entrants) {
-      isTeams = !!snap.teams; config.pool.hard = !!snap.hard;
-      tourney = restoreTournament(snap.snapshot);
+    const m = (await dbGet(dbRef(db, `sessions/${lobbyId}/match`))).val();
+    if (m && m.snapshot && m.snapshot.entrants && m.status !== 'complete') {
+      isTeams = !!m.teams; config.pool.hard = !!m.hard;
+      tourney = restoreTournament(m.snapshot);
       bracket = tourney.bracket;
       showGame(true);
       logTransition('tv', 'boot', 'resumed', 'tournament restored from snapshot');

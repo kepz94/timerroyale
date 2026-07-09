@@ -20,7 +20,7 @@ import { logTransition } from './session.js';
 // KOTH behavior exactly.
 // hardLoop (TR-52 §5, optional, default OFF): for a 2-player match, each round
 // runs the Hard Classic 13-attempt retry loop instead of a simultaneous round.
-export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, deadHeatVoid = false, deadlineMs, hardLoop = false, guessLoop = false, onMoment, targetFn, perPlayerStopMs }) {
+export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, deadHeatVoid = false, deadlineMs, hardLoop = false, guessLoop = false, roundKindFn, onMoment, targetFn, perPlayerStopMs, matchExtra }) {
   const wins = new Map(players.map((p) => [p.playerId, { playerId: p.playerId, name: p.name, wins: 0 }]));
   let roundNum = 0;
   let status = 'between'; // between | round | king
@@ -39,7 +39,10 @@ export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, 
       roundNum,
       tally: tally(),
       king: status === 'king' ? tally()[0] : null,
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
+      // Carry the tournament snapshot so a mid-game TV reload can still RESUME
+      // (koth owns the match node during a PvP game). No-op for PvE.
+      ...(matchExtra || {})
     };
   }
 
@@ -97,38 +100,43 @@ export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, 
     onMatch?.(matchState(), null);
   }
 
+  // Per-round mode pick: roundKindFn (mixed pools) wins; else the single-loop flags.
+  function pickKind() {
+    if (roundKindFn) return roundKindFn();
+    if (guessLoop) return 'guess';
+    if (hardLoop) return 'hard';
+    return 'classic';
+  }
+
   function nextRound() {
     if (status !== 'between') return;
     roundNum += 1;
     status = 'round';
     publish();
     onMatch?.(matchState(), null);
-    if (guessLoop) {
+    const kind = pickKind();
+    if (kind === 'guess') {
       currentRound = createGuessRound({
         db, room, players, targetMs: randomGuessTarget(),
         onTv: { state: (g) => { onTv?.state(g); if (g.status === 'over') applyResult(g); } },
         onMoment: (m) => onMoment?.(m),
       });
-    } else if (hardLoop && players.length === 2) {
+    } else if (kind === 'hard' && players.length === 2) {
       currentRound = createHardRound({
         db, room, repA: players[0], repB: players[1], targetMs: randomHardTarget(),
         onTv: { state: (g) => onTv?.state(g) },
         onResult: (winnerId) => applyHardResult(winnerId),
       });
     } else {
+      const isHard = kind === 'hard';
       currentRound = createRound({
-        db, room, players, hard, deadlineMs, perPlayerStopMs,
-        targetMs: targetFn ? targetFn() : kothTarget(hard),
-        onTv: {
-          state: (g) => {
-            onTv?.state(g);
-            if (g.status === 'over') applyResult(g);
-          }
-        }
+        db, room, players, hard: isHard, deadlineMs, perPlayerStopMs,
+        targetMs: (!isHard && targetFn) ? targetFn() : kothTarget(isHard),
+        onTv: { state: (g) => { onTv?.state(g); if (g.status === 'over') applyResult(g); } }
       });
     }
     currentRound.begin();
-    logTransition('koth', 'between', 'round', `round ${roundNum}, first to ${n}`);
+    logTransition('koth', 'between', 'round', `round ${roundNum} (${kind}), first to ${n}`);
   }
 
   function handleEvent(ev) {

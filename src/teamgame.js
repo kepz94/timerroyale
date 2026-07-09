@@ -29,7 +29,7 @@ export function activeMember(team, roundNum) {
 // hardLoop (TR-52 §5, optional, default OFF): when set, each round runs the Hard
 // Classic 13-attempt retry loop (createHardRound) instead of a simultaneous
 // target round. Classic behavior is untouched when off.
-export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, onTv, onGame, deadHeatVoid = false, deadlineMs, hardLoop = false, guessLoop = false, onMoment, targetFn, perPlayerStopMs }) {
+export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, onTv, onGame, deadHeatVoid = false, deadlineMs, hardLoop = false, guessLoop = false, roundKindFn, onMoment, targetFn, perPlayerStopMs }) {
   let winsA = 0, winsB = 0, roundNum = 0, status = 'between';
   let currentRound = null, activeA = null, activeB = null;
 
@@ -40,27 +40,23 @@ export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, on
     activeA = activeMember(teamA, roundNum);
     activeB = activeMember(teamB, roundNum);
     status = 'round';
-    if (guessLoop) {
+    const reps = [{ playerId: activeA.playerId, name: activeA.name }, { playerId: activeB.playerId, name: activeB.name }];
+    const kind = roundKindFn ? roundKindFn() : (guessLoop ? 'guess' : (hardLoop ? 'hard' : 'classic'));
+    if (kind === 'guess') {
       currentRound = createGuessRound({
-        db, room,
-        players: [{ playerId: activeA.playerId, name: activeA.name }, { playerId: activeB.playerId, name: activeB.name }],
-        targetMs: randomGuessTarget(),
+        db, room, players: reps, targetMs: randomGuessTarget(),
         onTv: { state: (g) => { onTv?.state(g, ctx()); if (g.status === 'over') resolve(g); } },
         onMoment: (m) => onMoment?.(m),
       });
-    } else if (hardLoop) {
+    } else if (kind === 'hard') {
       currentRound = createHardRound({
-        db, room,
-        repA: { playerId: activeA.playerId, name: activeA.name },
-        repB: { playerId: activeB.playerId, name: activeB.name },
-        targetMs: randomHardTarget(),
+        db, room, repA: reps[0], repB: reps[1], targetMs: randomHardTarget(),
         onTv: { state: (g) => onTv?.state(g, ctx()) },
         onResult: (winnerId) => awardRound(winnerId),
       });
     } else {
       currentRound = createRound({
-        db, room, hard, deadlineMs, perPlayerStopMs,
-        players: [{ playerId: activeA.playerId, name: activeA.name }, { playerId: activeB.playerId, name: activeB.name }],
+        db, room, hard: false, deadlineMs, perPlayerStopMs, players: reps,
         targetMs: targetFn ? targetFn() : randomTarget(),
         onTv: { state: (g) => { onTv?.state(g, ctx()); if (g.status === 'over') resolve(g); } }
       });
