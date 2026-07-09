@@ -20,7 +20,12 @@ export function isExact(elapsedMs, targetMs) {
   return Math.round(elapsedMs / 100) === Math.round(targetMs / 100);
 }
 
-export function createRound({ db, room, players, targetMs, hard = false, onTv }) {
+// deadlineMs (TR-52, optional): an ABSOLUTE cutoff from round start after which
+// any still-running/waiting player is DNF'd — used by party Classic's 20s
+// hostage-prevention cutoff. When omitted the round keeps the original behavior
+// (a grace window of DNF_GRACE_MS past the target), so single-player and PvE are
+// unaffected.
+export function createRound({ db, room, players, targetMs, hard = false, onTv, deadlineMs }) {
   // players: [{playerId, name}] — everyone in the lobby plays every round.
   let status = 'running'; // running | over
   const slots = new Map(players.map((p) => [p.playerId, {
@@ -33,6 +38,7 @@ export function createRound({ db, room, players, targetMs, hard = false, onTv })
     deviationMs: null
   }]));
   let dnfTimer = null;
+  const dnfDelayMs = deadlineMs != null ? deadlineMs : targetMs + DNF_GRACE_MS;
 
   function snapshotPlayers() {
     return Object.fromEntries([...slots.values()].map((s) => [s.playerId, { ...s }]));
@@ -87,12 +93,12 @@ export function createRound({ db, room, players, targetMs, hard = false, onTv })
     dnfTimer = setTimeout(() => {
       for (const s of slots.values()) {
         if (s.state === 'waiting' || s.state === 'running') {
-          logTransition('round', s.state, 'dnf', `${s.name}: deadline (target+${DNF_GRACE_MS}ms)`);
+          logTransition('round', s.state, 'dnf', `${s.name}: deadline (${dnfDelayMs}ms from start)`);
           s.state = 'dnf';
         }
       }
       maybeFinish('DNF deadline');
-    }, targetMs + DNF_GRACE_MS);
+    }, dnfDelayMs);
   }
 
   function handleEvent(ev) {

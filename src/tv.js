@@ -16,6 +16,7 @@ import { createKoth } from './koth.js';
 import { createMatch as createElim } from './elimination.js';
 import { createBracket, reportGameWin, activeMatches, isComplete, roundLabel } from './bracket.js';
 import { createTournament, ROUNDS_TO_WIN_GAME } from './tournament.js';
+import { CLASSIC_CUTOFF_MS } from './resolve.js';
 import { createTeamGame, distributeTeams } from './teamgame.js';
 import { createDraftState, applyPick, autoPick, draftTeams } from './draft.js';
 import { ref as dbRef, set as dbSet } from 'firebase/database';
@@ -174,13 +175,15 @@ function nextTourneyGame() {
 
 function startBracketGame() {
   const two = [{ playerId: curMatch.a.id, name: curMatch.a.name }, { playerId: curMatch.b.id, name: curMatch.b.name }];
-  // A GAME = first to ROUNDS_TO_WIN_GAME round-wins (TR-52).
-  engine = createKoth({ db, room: lobbyId, players: two, n: ROUNDS_TO_WIN_GAME, hard: !!config.pool.hard, onTv: { state: renderRound }, onMatch: onPvpGame });
+  // A GAME = first to ROUNDS_TO_WIN_GAME round-wins (TR-52). Party Classic opts
+  // into the dead-heat void + 20s hostage cutoff (Hard runs exact-hit as-is).
+  engine = createKoth({ db, room: lobbyId, players: two, n: ROUNDS_TO_WIN_GAME, hard: !!config.pool.hard, deadHeatVoid: !config.pool.hard, deadlineMs: CLASSIC_CUTOFF_MS, onTv: { state: renderRound }, onMatch: onPvpGame });
   engine.nextRound();
 }
 
 function onPvpGame(m) {
   renderKoth(m, true);
+  if (m.tieVoid) { el('tv-game-msg').classList.remove('final'); el('tv-game-msg').textContent = '🟰 TIE GAME — RESETTING with a new target…'; return; }
   if (m.status === 'king') {
     tourney.reportGame(curMatch.id, m.king.playerId); // credit the game + rotate
     engine = null;
@@ -253,8 +256,12 @@ function startTeamMatch() {
   // round (solo team plays every round — the 2v1 fairness rule in teamgame.js).
   engine = createTeamGame({
     db, room: lobbyId, teamA, teamB, n: ROUNDS_TO_WIN_GAME, hard: !!config.pool.hard,
+    deadHeatVoid: !config.pool.hard, deadlineMs: CLASSIC_CUTOFF_MS,
     onTv: { state: (g, ctx) => renderTeamRound(g, ctx) },
-    onGame: (r) => { if (r.status === 'over') { tourney.reportGame(curMatch.id, r.winner.id); engine = null; renderBracket(); setTimeout(nextTourneyGame, 2600); } }
+    onGame: (r) => {
+      if (r.status === 'tie-void') { el('tv-game-msg').classList.remove('final'); el('tv-game-msg').textContent = '🟰 TIE GAME — RESETTING with a new target…'; return; }
+      if (r.status === 'over') { tourney.reportGame(curMatch.id, r.winner.id); engine = null; renderBracket(); setTimeout(nextTourneyGame, 2600); }
+    }
   });
   engine.nextRound();
 }

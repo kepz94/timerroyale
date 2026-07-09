@@ -8,7 +8,7 @@ import { logTransition } from './session.js';
 export const GUESS_MIN_MS = 1000;
 export const GUESS_MAX_MS = 8000;
 export const GET_READY_MS = 2500;
-export const GUESS_WINDOW_MS = 20000;
+export const GUESS_WINDOW_MS = 15000; // TR-52: 15-second submission window
 
 export function randomGuessTarget() {
   const ms = GUESS_MIN_MS + Math.random() * (GUESS_MAX_MS - GUESS_MIN_MS);
@@ -58,8 +58,12 @@ export function createGuessRound({ db, room, players, targetMs, onTv, onMoment }
     clearTimeout(deadlineTimer);
     for (const s of slots.values()) {
       if (s.state === 'waiting') {
-        s.state = 'dnf';
-        logTransition('guess', 'waiting', 'dnf', `${s.name}: no guess by deadline`);
+        // TR-52 Default Penalty: a missed submission defaults to 0.00s (which
+        // virtually guarantees a round loss), rather than a bare DNF.
+        s.guessMs = 0;
+        s.deltaMs = Math.abs(0 - actualMs);
+        s.state = 'guessed';
+        logTransition('guess', 'waiting', 'default-zero', `${s.name}: no guess by deadline -> 0.00s`);
       }
     }
     publish();

@@ -3,6 +3,7 @@
 // first player to N wins is crowned King. All-DNF rounds award nothing.
 import { ref, set, serverTimestamp } from 'firebase/database';
 import { createRound, randomTarget } from './round.js';
+import { classicOutcome } from './resolve.js';
 
 // Hard KOTH uses a fast, reactive band (0.5-3.5s) to balance exact-hit difficulty.
 function kothTarget(hard) {
@@ -10,7 +11,12 @@ function kothTarget(hard) {
 }
 import { logTransition } from './session.js';
 
-export function createKoth({ db, room, players, n, hard = false, onTv, onMatch }) {
+// deadHeatVoid / deadlineMs (TR-52, optional, default OFF): when the caller opts
+// in (party Classic tournaments), a round whose two closest contenders share the
+// exact same absolute deviation is VOIDED and rerun with a fresh target, and the
+// live ticker is capped by deadlineMs. Omitting both preserves the original PvE
+// KOTH behavior exactly.
+export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, deadHeatVoid = false, deadlineMs }) {
   const wins = new Map(players.map((p) => [p.playerId, { playerId: p.playerId, name: p.name, wins: 0 }]));
   let roundNum = 0;
   let status = 'between'; // between | round | king
@@ -38,6 +44,21 @@ export function createKoth({ db, room, players, n, hard = false, onTv, onMatch }
   }
 
   function applyResult(roundState) {
+    // TR-52 Dead-Heat Tie-Breaker (opt-in): identical absolute deviations void
+    // the round — no win is awarded and a fresh target reruns automatically.
+    if (deadHeatVoid) {
+      const stopped = Object.values(roundState.players || {})
+        .filter((s) => s.state === 'stopped')
+        .map((s) => ({ playerId: s.playerId, deviationMs: s.deviationMs }));
+      if (classicOutcome(stopped).deadHeat) {
+        status = 'between';
+        logTransition('koth', 'round', 'tie-void', `round ${roundNum}: dead-heat, rerunning`);
+        publish();
+        onMatch?.({ ...matchState(), tieVoid: true }, roundState);
+        setTimeout(() => { if (status === 'between') nextRound(); }, 2600);
+        return;
+      }
+    }
     // In hard mode roundState.winner is null unless the best hit was exact.
     const winnerId = roundState.winner?.playerId ?? null;
     if (winnerId) {
@@ -65,7 +86,7 @@ export function createKoth({ db, room, players, n, hard = false, onTv, onMatch }
     publish();
     onMatch?.(matchState(), null);
     currentRound = createRound({
-      db, room, players, hard,
+      db, room, players, hard, deadlineMs,
       targetMs: kothTarget(hard),
       onTv: {
         state: (g) => {

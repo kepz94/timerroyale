@@ -5,6 +5,7 @@
 // takes the match. Reuses round.js. Exposes the koth-like interface so /tv's
 // event router (press / next / isBetween) works unchanged.
 import { createRound, randomTarget } from './round.js';
+import { classicOutcome } from './resolve.js';
 
 /** Pure: round-robin players into `numTeams` teams (sizes within 1). */
 export function distributeTeams(players, numTeams) {
@@ -19,7 +20,11 @@ export function activeMember(team, roundNum) {
   return team.members[roundNum % team.members.length];
 }
 
-export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, onTv, onGame }) {
+// deadHeatVoid / deadlineMs (TR-52, optional, default OFF): when opted in, a
+// round whose two reps share the exact same absolute deviation is voided and
+// rerun with a fresh target (same reps, no ledger dot), and the live ticker is
+// capped by deadlineMs. Omitting both preserves the original behavior.
+export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, onTv, onGame, deadHeatVoid = false, deadlineMs }) {
   let winsA = 0, winsB = 0, roundNum = 0, status = 'between';
   let currentRound = null, activeA = null, activeB = null;
 
@@ -29,9 +34,9 @@ export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, on
     activeB = activeMember(teamB, roundNum);
     status = 'round';
     currentRound = createRound({
-      db, room,
+      db, room, hard, deadlineMs,
       players: [{ playerId: activeA.playerId, name: activeA.name }, { playerId: activeB.playerId, name: activeB.name }],
-      targetMs: randomTarget(), hard,
+      targetMs: randomTarget(),
       onTv: { state: (g) => { onTv?.state(g, { teamA, teamB, winsA, winsB, activeA, activeB, n }); if (g.status === 'over') resolve(g); } }
     });
     currentRound.begin();
@@ -39,6 +44,19 @@ export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, on
 
   function resolve(g) {
     if (status !== 'round') return; // resolve once per round
+    // TR-52 Dead-Heat Tie-Breaker (opt-in): identical absolute deviations void
+    // the round — no dot, rerun the same matchup with a fresh target.
+    if (deadHeatVoid) {
+      const stopped = Object.values(g.players || {})
+        .filter((s) => s.state === 'stopped')
+        .map((s) => ({ playerId: s.playerId, deviationMs: s.deviationMs }));
+      if (classicOutcome(stopped).deadHeat) {
+        status = 'between';
+        onGame?.({ status: 'tie-void', winsA, winsB, roundNum });
+        setTimeout(() => { if (status === 'between') nextRound(); }, 2600);
+        return;
+      }
+    }
     const w = g.ranking && g.ranking[0];
     if (w === activeA.playerId) winsA += 1; else if (w === activeB.playerId) winsB += 1;
     roundNum += 1;
