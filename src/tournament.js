@@ -10,16 +10,16 @@
 // remainder. The moment only the final-round match remains live, Grand Finals
 // Mode locks onto it for an uninterrupted series until a champion is crowned.
 // Composes bracket.js; it does NOT modify the bracket engine.
+//
+// serialize/restore let the TV persist the whole tournament and RESUME it after
+// a reload (see tv.js) instead of restarting to the menu.
 import { createBracket, reportGameWin, activeMatches, isComplete } from './bracket.js';
 
 export const ROUNDS_TO_WIN_GAME = 5; // a GAME = first to 5 ledger dots
 export const GAMES_TO_WIN_MATCH = 3; // a MATCH = Best of 5 games (first to 3)
 
-export function createTournament(entrants, {
-  roundsToWinGame = ROUNDS_TO_WIN_GAME,
-  gamesToWinMatch = GAMES_TO_WIN_MATCH,
-} = {}) {
-  const bracket = createBracket(entrants, { gamesToWin: gamesToWinMatch });
+// Internal: wrap a (fresh or restored) bracket in the scheduling API.
+function schedulerFor(bracket, { roundsToWinGame = ROUNDS_TO_WIN_GAME } = {}) {
   const dots = new Map(); // matchId -> { a, b } ledger dots for the IN-PROGRESS game
   const dotsFor = (id) => { if (!dots.has(id)) dots.set(id, { a: 0, b: 0 }); return dots.get(id); };
   let current = activeMatches(bracket)[0] || null;
@@ -32,8 +32,6 @@ export function createTournament(entrants, {
     return act.length === 1 && act[0].round === finalRound();
   }
 
-  // Which match hosts the next GAME. justId still live -> alternate to the next
-  // live match; justId decided (-1) -> lock onto the remaining live match.
   function nextToPlay(justId) {
     const act = activeMatches(bracket);
     if (act.length === 0) return null;
@@ -42,11 +40,6 @@ export function createTournament(entrants, {
     return act[(i + 1) % act.length];
   }
 
-  /**
-   * Award one ledger dot in the current game of `matchId`.
-   * @param {number} matchId bracket match id
-   * @param {'a'|'b'} side the match's a/b entrant that won the round
-   */
   function reportRoundWin(matchId, side) {
     const m = findMatch(matchId);
     if (!m || m.winner || (side !== 'a' && side !== 'b')) return { ok: false };
@@ -58,24 +51,12 @@ export function createTournament(entrants, {
       gameWinner = g.a >= roundsToWinGame ? m.a : m.b;
       const res = reportGameWin(bracket, matchId, gameWinner.id);
       matchDecided = !!res.decided;
-      dots.set(matchId, { a: 0, b: 0 }); // reset for this match's next game
+      dots.set(matchId, { a: 0, b: 0 });
       current = nextToPlay(matchId);
     }
-    return {
-      ok: true, gameDecided, gameWinner, matchDecided,
-      current, grandFinals: isGrandFinals(), champion: bracket.champion,
-    };
+    return { ok: true, gameDecided, gameWinner, matchDecided, current, grandFinals: isGrandFinals(), champion: bracket.champion };
   }
 
-  /**
-   * Report a COMPLETED game directly (for engines that run a full first-to-N
-   * game internally, e.g. koth/teamgame). Credits the game to the bracket, then
-   * applies the rotation loop / Grand Finals lock. Prefer this when the game
-   * engine already owns the per-round tally; use reportRoundWin when this module
-   * should own the ledger dots.
-   * @param {number} matchId
-   * @param {string} entrantId the winning entrant's id (m.a.id | m.b.id)
-   */
   function reportGame(matchId, entrantId) {
     const m = findMatch(matchId);
     if (!m || m.winner) return { ok: false };
@@ -83,10 +64,7 @@ export function createTournament(entrants, {
     if (!res.ok) return { ok: false };
     dots.set(matchId, { a: 0, b: 0 });
     current = nextToPlay(matchId);
-    return {
-      ok: true, matchDecided: !!res.decided,
-      current, grandFinals: isGrandFinals(), champion: bracket.champion,
-    };
+    return { ok: true, matchDecided: !!res.decided, current, grandFinals: isGrandFinals(), champion: bracket.champion };
   }
 
   return {
@@ -99,4 +77,53 @@ export function createTournament(entrants, {
     isGrandFinals,
     isComplete: () => isComplete(bracket),
   };
+}
+
+export function createTournament(entrants, {
+  roundsToWinGame = ROUNDS_TO_WIN_GAME,
+  gamesToWinMatch = GAMES_TO_WIN_MATCH,
+} = {}) {
+  const bracket = createBracket(entrants, { gamesToWin: gamesToWinMatch });
+  return schedulerFor(bracket, { roundsToWinGame });
+}
+
+/** Serialize a live tournament (+ the current match) to a plain snapshot. */
+export function serializeTournament(bracket, curMatch) {
+  return {
+    gamesToWin: bracket.gamesToWin,
+    entrants: bracket.entrants.map((e) => (e.members ? { id: e.id, name: e.name, members: e.members } : { id: e.id, name: e.name })),
+    rounds: bracket.rounds.map((round) => round.map((m) => ({
+      id: m.id, round: m.round, index: m.index,
+      aId: m.a ? m.a.id : null, bId: m.b ? m.b.id : null,
+      gamesA: m.gamesA, gamesB: m.gamesB,
+      winnerId: m.winner ? m.winner.id : null, bye: !!m.bye,
+    }))),
+    championId: bracket.champion ? bracket.champion.id : null,
+    curMatchId: curMatch ? curMatch.id : null,
+  };
+}
+
+/** Rebuild a bracket object from a snapshot (entrant identity restored by id). */
+export function deserializeBracket(snap) {
+  const byId = new Map(snap.entrants.map((e) => [e.id, e]));
+  const rounds = (snap.rounds || []).map((round) => (round || []).map((m) => ({
+    id: m.id, round: m.round, index: m.index,
+    a: m.aId != null ? byId.get(m.aId) : null,
+    b: m.bId != null ? byId.get(m.bId) : null,
+    gamesA: m.gamesA || 0, gamesB: m.gamesB || 0,
+    winner: m.winnerId != null ? byId.get(m.winnerId) : null,
+    bye: !!m.bye,
+  })));
+  return { entrants: snap.entrants, gamesToWin: snap.gamesToWin, rounds, champion: snap.championId != null ? byId.get(snap.championId) : null };
+}
+
+/** Restore a tournament scheduler from a snapshot, re-selecting the saved match. */
+export function restoreTournament(snap, opts = {}) {
+  const bracket = deserializeBracket(snap);
+  const t = schedulerFor(bracket, opts);
+  if (snap.curMatchId != null) {
+    const m = bracket.rounds.flat().find((x) => x.id === snap.curMatchId);
+    if (m && !m.winner) t.setCurrent(m);
+  }
+  return t;
 }

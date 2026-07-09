@@ -17,11 +17,11 @@ import { validatePool, validateCategory, ENVIRONMENTS, KOTH_THRESHOLDS } from '.
 import { createKoth } from './koth.js';
 import { createMatch as createElim } from './elimination.js';
 import { createBracket, reportGameWin, activeMatches, isComplete, roundLabel } from './bracket.js';
-import { createTournament, ROUNDS_TO_WIN_GAME } from './tournament.js';
+import { createTournament, restoreTournament, serializeTournament, ROUNDS_TO_WIN_GAME } from './tournament.js';
 import { createClassicTargets } from './targets.js';
 import { createTeamGame, distributeTeams } from './teamgame.js';
 import { createDraftState, applyPick, autoPick, draftTeams } from './draft.js';
-import { ref as dbRef, set as dbSet } from 'firebase/database';
+import { ref as dbRef, set as dbSet, get as dbGet } from 'firebase/database';
 import { fmtOff, fmtS2, fmtS, fmtSigned } from './format.js';
 
 const el = (id) => document.getElementById(id);
@@ -271,6 +271,21 @@ function launchPvp() {
   nextTourneyGame();
 }
 
+// Persist the whole tournament (bracket + config + current match) so a TV reload
+// can RESUME it (see boot) instead of restarting to the menu. Never throws.
+function persistTournament() {
+  if (!tourney) return;
+  try {
+    const snapshot = serializeTournament(tourney.bracket, curMatch);
+    dbSet(dbRef(db, `sessions/${lobbyId}/match`), {
+      type: 'tournament',
+      status: tourney.isComplete() ? 'complete' : 'playing',
+      teams: !!isTeams, hard: !!config.pool.hard,
+      snapshot,
+    }).catch(() => {});
+  } catch { /* persistence must never break the live game */ }
+}
+
 // Rotate onto the next game per the Match Rotation Loop / Grand Finals lock, and
 // show the bracket-intermission takeover while the room gets ready.
 function nextTourneyGame() {
@@ -279,10 +294,11 @@ function nextTourneyGame() {
   if (tourney.isComplete()) {
     renderBracket();
     renderChampion(bracket.champion);
-    dbSet(dbRef(db, `sessions/${lobbyId}/match`), { type: 'tournament', status: 'complete' }).catch(() => {});
+    persistTournament();
     return;
   }
   curMatch = tourney.current();
+  persistTournament();
   const gf = tourney.isGrandFinals();
   renderBracket(); // shows the bracket screen
   el('tv-match-banner').textContent = gf ? '🏆 GRAND FINALS — BEST OF 5' : 'TOURNAMENT BRACKET — BEST OF 5';
@@ -529,6 +545,18 @@ async function boot() {
     if (ev.type === 'press' && engine) { engine.handleEvent(ev); return; }
     if (ev.type === 'next' && engine && ev.playerId === hostId && engine.isBetween()) { engine.nextRound(); return; }
   });
+  // Resume a tournament in progress if the TV reloaded mid-game (reconnect).
+  try {
+    const snap = (await dbGet(dbRef(db, `sessions/${lobbyId}/match`))).val();
+    if (snap && snap.type === 'tournament' && snap.status === 'playing' && snap.snapshot && snap.snapshot.entrants) {
+      isTeams = !!snap.teams; config.pool.hard = !!snap.hard;
+      tourney = restoreTournament(snap.snapshot);
+      bracket = tourney.bracket;
+      showGame(true);
+      logTransition('tv', 'boot', 'resumed', 'tournament restored from snapshot');
+      nextTourneyGame();
+    }
+  } catch { /* malformed/absent snapshot -> normal lobby */ }
   logTransition('tv', 'boot', 'lobby', `room ${lobbyId}`);
 }
 boot();
