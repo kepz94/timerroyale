@@ -58,6 +58,15 @@
       .reveal-winner.clutch { color: #f0b429; }
       .rotation-banner { color: #f0b429; font-weight: 700; letter-spacing: .04em; min-height: 1.2em; }
 
+      /* TR-52 §5: Hard Classic retry-loop screen (attempt history + success) */
+      #hard-target { font-size: clamp(2.5rem, 7vw, 5rem); font-weight: 800;
+        font-variant-numeric: tabular-nums; color: var(--text); line-height: 1; }
+      #hard-zone { color: var(--text-dim); font-size: var(--fs-small); letter-spacing: .1em;
+        text-transform: uppercase; }
+      #hard-history { max-width: 40rem; }
+      .round-row.hit { border-left: 4px solid var(--win); color: var(--win); }
+      .round-row.dnf { border-left: 4px solid var(--danger); }
+
       /* TR-52 State 6: the tournament bracket tree (game-intermission takeover) */
       .tv-bracket { display: flex; gap: 1.5rem; justify-content: center; align-items: center;
         flex-wrap: wrap; margin: 1rem auto; }
@@ -122,6 +131,16 @@
           <p id="reveal-sub" class="reveal-sub">Revealing recorded times…</p>
           <div id="reveal-cards" class="reveal-cards"></div>
           <p id="reveal-winner" class="reveal-winner"></p>
+        </div>
+
+        <div id="tv-hard" class="tv-state" hidden>
+          <p id="hard-head" class="reveal-head"></p>
+          <p id="hard-sub" class="reveal-sub"></p>
+          <p id="hard-target" class="timer-digits"></p>
+          <p id="hard-zone" class="rc-dev"></p>
+          <ul id="hard-history" class="round-rows"></ul>
+          <p id="hard-winner" class="reveal-winner"></p>
+          <p id="hard-representing" class="rotation-banner"></p>
         </div>
 
         <div id="tv-bracket" class="tv-bracket" hidden></div>
