@@ -40,6 +40,25 @@
         <p id="turn-banner" class="turn-banner"></p>
         <button id="big-press" class="big-btn" type="button" hidden aria-label="Press"><span>PRESS</span></button>
         <button id="next-round-btn" class="join-btn" type="button" hidden>Next Round ▶</button>
+        <section id="draft-panel" hidden aria-label="Team draft">
+          <p id="draft-pool-label" class="players-label" hidden>Your pick — tap a player:</p>
+          <div id="draft-pool" class="menu"></div>
+          <form id="draft-name-form" class="join-form" hidden>
+            <input id="draft-name-input" class="name-input" type="text" maxlength="16" autocomplete="off" placeholder="Team name" />
+            <button class="join-btn" type="submit">Set name</button>
+          </form>
+          <div id="draft-emoji" class="menu" hidden>
+            <button class="join-btn emoji-btn" type="button">🔥</button>
+            <button class="join-btn emoji-btn" type="button">⚡</button>
+            <button class="join-btn emoji-btn" type="button">🐉</button>
+            <button class="join-btn emoji-btn" type="button">🦈</button>
+            <button class="join-btn emoji-btn" type="button">👑</button>
+            <button class="join-btn emoji-btn" type="button">🚀</button>
+            <button class="join-btn emoji-btn" type="button">🌟</button>
+            <button class="join-btn emoji-btn" type="button">💀</button>
+          </div>
+          <button id="draft-start-btn" class="join-btn" type="button" hidden>Start Tournament ▶</button>
+        </section>
         <div id="dpad" class="dpad" hidden aria-label="Host remote">
           <button class="dpad-btn up" data-dir="up" type="button">▲</button>
           <button class="dpad-btn left" data-dir="left" type="button">◀</button>
