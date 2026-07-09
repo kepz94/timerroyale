@@ -16,9 +16,74 @@
       .tv-menu li.focused { background: #0f2a1a; color: #4ade80; border-color: #22c55e;
         box-shadow: 0 0 18px rgba(34,197,94,0.35); }
       .tv-menu .tv-menu-msg { color: #f0b429; margin-top: 0.8rem; min-height: 1.2em; }
+
+      /* TR-52: distinct TV state screens (Active / Reveal / Bracket) */
+      .tv-state { display: grid; gap: var(--gap); }
+      .tv-turn { font-size: var(--fs-small); text-transform: uppercase; letter-spacing: .22em;
+        color: var(--text-dim); min-height: 1.2em; }
+      .tv-ledger { display: flex; justify-content: center; gap: 2.5rem; flex-wrap: wrap; margin: .2rem 0 .4rem; }
+      .tv-ledger .team { display: grid; justify-items: center; gap: .2rem; }
+      .tv-ledger .team .name { font-size: var(--fs-small); color: var(--text-dim);
+        text-transform: uppercase; letter-spacing: .12em; }
+      .tv-ledger .team .dot-strip { font-size: 1.7rem; letter-spacing: .18em; }
+
+      .reveal-head { font-size: var(--fs-title); font-weight: 800; letter-spacing: .16em;
+        color: var(--accent); text-transform: uppercase; }
+      .reveal-sub { color: var(--text-dim); letter-spacing: .22em; text-transform: uppercase;
+        font-size: var(--fs-small); min-height: 1.1em; }
+      .reveal-cards { display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap; margin: .6rem auto; }
+      .reveal-card { background: var(--surface-raised); border-radius: var(--radius);
+        padding: 1.2rem 2rem; min-width: 13rem; border: 3px solid transparent;
+        transition: border-color .2s, box-shadow .2s; }
+      .reveal-card .rc-team { font-size: var(--fs-small); color: var(--text-dim);
+        text-transform: uppercase; letter-spacing: .16em; min-height: 1em; }
+      .reveal-card .rc-name { font-weight: 800; font-size: var(--fs-body); margin-bottom: .4rem; }
+      .reveal-card .rc-time { font-size: var(--fs-hero); font-weight: 800;
+        font-variant-numeric: tabular-nums; line-height: 1; }
+      .reveal-card .rc-dev { color: var(--text-dim); font-size: var(--fs-small);
+        margin-top: .35rem; letter-spacing: .05em; }
+      .reveal-card.win { border-color: var(--win); box-shadow: 0 0 26px rgba(74,222,128,.35); }
+      .reveal-card.clutch { border-color: #f0b429; box-shadow: 0 0 32px rgba(240,180,41,.5);
+        animation: clutchPulse .8s ease-in-out infinite alternate; }
+      .reveal-card.dnf { opacity: .55; animation: shatter .5s ease-out; }
+      .reveal-card.dnf .rc-time { color: var(--state-eliminated); }
+      @keyframes clutchPulse { from { transform: scale(1); } to { transform: scale(1.05); } }
+      @keyframes shatter { 0% { transform: translateX(0) rotate(0); }
+        20% { transform: translateX(-7px) rotate(-2.5deg); }
+        45% { transform: translateX(6px) rotate(2deg); }
+        70% { transform: translateX(-3px) rotate(-1deg); }
+        100% { transform: translateX(0) rotate(0); } }
+      .reveal-winner { font-size: var(--fs-title); font-weight: 800; color: var(--win);
+        letter-spacing: .04em; min-height: 1.3em; }
+      .reveal-winner.clutch { color: #f0b429; }
+      .rotation-banner { color: #f0b429; font-weight: 700; letter-spacing: .04em; min-height: 1.2em; }
+
+      /* TR-52 State 6: the tournament bracket tree (game-intermission takeover) */
+      .tv-bracket { display: flex; gap: 1.5rem; justify-content: center; align-items: center;
+        flex-wrap: wrap; margin: 1rem auto; }
+      .bkt-col { display: flex; flex-direction: column; gap: 1rem; justify-content: center; }
+      .bkt-col-head { font-size: var(--fs-small); color: var(--text-dim); text-transform: uppercase;
+        letter-spacing: .15em; text-align: center; margin-bottom: .2rem; }
+      .bkt-match { background: var(--surface-raised); border-radius: var(--radius);
+        padding: .5rem .9rem; min-width: 12rem; border-left: 4px solid transparent; }
+      .bkt-match.current { border-left-color: #f0b429; box-shadow: 0 0 16px rgba(240,180,41,.3); }
+      .bkt-slot { display: flex; justify-content: space-between; gap: 1rem;
+        font-size: var(--fs-small); padding: .18rem 0; }
+      .bkt-slot.winner { color: var(--win); font-weight: 800; }
+      .bkt-slot .games { font-variant-numeric: tabular-nums; color: var(--text-dim); }
+      .bkt-champ { text-align: center; padding: .5rem 1rem; }
+      .bkt-champ .lbl { font-size: 1.6rem; }
+      .bkt-champ .who { font-size: var(--fs-body); font-weight: 800; color: var(--win); }
+
+      /* Flash overlays (Guess start/stop cues, ready for wiring) */
+      #tv-flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 50; }
+      #tv-flash.green { background: rgba(34,197,94,.65); animation: flashOnce .4s ease-out; }
+      #tv-flash.red { background: rgba(239,68,68,.65); animation: flashOnce .4s ease-out; }
+      @keyframes flashOnce { 0% { opacity: .9; } 100% { opacity: 0; } }
     </style>
   </head>
   <body class="host">
+    <div id="tv-flash"></div>
     <main id="app" class="lobby">
       <h1>TimerRoyale</h1>
       <p class="subtitle">Scan to grab a controller</p>
@@ -42,10 +107,26 @@
       </section>
       <section id="tv-game" class="game-panel" hidden aria-label="Game">
         <p id="tv-match-banner" class="match-banner"></p>
-        <p class="target-label">Target</p>
-        <p id="tv-target" class="timer-digits">0.0<span class="timer-unit">s</span></p>
-        <ul id="tv-round-rows" class="round-rows"></ul>
+
+        <div id="tv-ledger" class="tv-ledger" hidden></div>
+
+        <div id="tv-active" class="tv-state">
+          <p id="tv-target-label" class="target-label">Target</p>
+          <p id="tv-target" class="timer-digits">0.0<span class="timer-unit">s</span></p>
+          <p id="tv-turn" class="tv-turn" hidden></p>
+          <ul id="tv-round-rows" class="round-rows"></ul>
+        </div>
+
+        <div id="tv-reveal" class="tv-state" hidden>
+          <p id="reveal-head" class="reveal-head">Round Complete</p>
+          <p id="reveal-sub" class="reveal-sub">Revealing recorded times…</p>
+          <div id="reveal-cards" class="reveal-cards"></div>
+          <p id="reveal-winner" class="reveal-winner"></p>
+        </div>
+
+        <div id="tv-bracket" class="tv-bracket" hidden></div>
         <ul id="tv-standings" class="standings"></ul>
+        <p id="tv-rotation" class="rotation-banner"></p>
         <p id="tv-game-msg" class="game-msg"></p>
       </section>
       <p id="status">Creating room…</p>
