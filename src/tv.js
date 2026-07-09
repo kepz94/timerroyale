@@ -113,9 +113,57 @@ function render() {
 function showScreen(s) {
   el('tv-active').hidden = s !== 'active';
   el('tv-reveal').hidden = s !== 'reveal';
+  el('tv-hard').hidden = s !== 'hard';
   el('tv-bracket').hidden = s !== 'bracket';
   if (s !== 'bracket') el('tv-rotation').textContent = '';
-  if (s === 'bracket') { el('tv-ledger').hidden = true; el('tv-standings').hidden = true; el('tv-turn').hidden = true; }
+  if (s === 'reveal' || s === 'hard' || s === 'bracket') el('tv-standings').hidden = true;
+  if (s === 'bracket') { el('tv-ledger').hidden = true; el('tv-turn').hidden = true; }
+}
+
+// TR-52 §5: the Hard Classic retry-loop screen — live attempt history while the
+// active rep retries, then the "TARGET MATCHED" success layout. teamCtx (Teams)
+// supplies team names for the representing / up-next callout.
+function renderHard(g, teamCtx) {
+  showScreen('hard');
+  const target1 = fmtS(g.targetMs);
+  const zoneLo = Math.floor(g.targetMs / 100) * 100, zoneHi = zoneLo + 99;
+  const teamNameFor = (pid) => {
+    if (!teamCtx) return '';
+    return pid === teamCtx.activeA.playerId ? teamCtx.teamA.name : pid === teamCtx.activeB.playerId ? teamCtx.teamB.name : '';
+  };
+  el('tv-match-banner').textContent = `HARD CLASSIC — TARGET ${target1}s`;
+  if (g.status === 'over') {
+    const w = g.winner;
+    const wAtt = w ? (g.attempts[w.playerId] || []) : [];
+    const cleanHit = wAtt.some((a) => a.hit);
+    const winTime = wAtt.length ? wAtt[wAtt.length - 1].elapsedMs : null;
+    el('hard-head').textContent = cleanHit ? '🎯 TARGET MATCHED!' : 'ROUND OVER';
+    el('hard-sub').textContent = w
+      ? (cleanHit ? `${w.name} hits the zone on attempt #${wAtt.length}` : `${w.name} takes it — closest attempt`)
+      : 'No winner — host taps Next Round.';
+    el('hard-target').innerHTML = winTime != null ? `${fmtS2(winTime)}<span class="timer-unit">s</span>` : '';
+    el('hard-zone').textContent = `MATCH ZONE ${fmtS2(zoneLo)}s – ${fmtS2(zoneHi)}s`;
+    el('hard-history').innerHTML = '';
+    el('hard-winner').textContent = w ? `🏆 ${teamNameFor(w.playerId) || w.name} wins the round! (+1 ledger dot)` : '';
+    el('hard-representing').textContent = '';
+  } else {
+    const aid = g.activeId;
+    const att = g.attempts[aid] || [];
+    el('hard-head').textContent = `ACTIVE PLAYER: ${g.activeName || ''}`;
+    el('hard-sub').textContent = `Attempt #${att.length + 1} — tap to start, tap to stop`;
+    el('hard-target').innerHTML = `${target1}<span class="timer-unit">s</span>`;
+    el('hard-zone').textContent = `HIT THE ZONE ${fmtS2(zoneLo)}s – ${fmtS2(zoneHi)}s`;
+    const hist = el('hard-history'); hist.innerHTML = '';
+    att.forEach((a, i) => {
+      const li = document.createElement('li'); li.className = 'round-row ' + (a.hit ? 'hit' : 'dnf');
+      li.innerHTML = `<span class="row-name">${a.hit ? '🎯' : '❌'} Attempt ${i + 1}</span><span class="row-time">${fmtS2(a.elapsedMs)}s ${a.hit ? '(HIT!)' : (a.early ? '(Too Early)' : '(Too Late)')}</span>`;
+      hist.appendChild(li);
+    });
+    el('hard-winner').textContent = '';
+    el('hard-representing').textContent = teamCtx
+      ? `Representing: ${teamNameFor(aid)}   ·   Up next: ${aid === teamCtx.activeA.playerId ? teamCtx.teamB.name : teamCtx.teamA.name}`
+      : '';
+  }
 }
 
 function showLedger(aName, aWon, bName, bWon) {
@@ -244,7 +292,7 @@ function startBracketGame() {
   const two = [{ playerId: curMatch.a.id, name: curMatch.a.name }, { playerId: curMatch.b.id, name: curMatch.b.name }];
   // A GAME = first to ROUNDS_TO_WIN_GAME round-wins (TR-52). Party Classic opts
   // into the dead-heat void + 20s hostage cutoff (Hard runs exact-hit as-is).
-  engine = createKoth({ db, room: lobbyId, players: two, n: ROUNDS_TO_WIN_GAME, hard: !!config.pool.hard, deadHeatVoid: !config.pool.hard, deadlineMs: CLASSIC_CUTOFF_MS, onTv: { state: renderRound }, onMatch: onPvpGame });
+  engine = createKoth({ db, room: lobbyId, players: two, n: ROUNDS_TO_WIN_GAME, hard: !!config.pool.hard, hardLoop: !!config.pool.hard, deadHeatVoid: !config.pool.hard, deadlineMs: CLASSIC_CUTOFF_MS, onTv: { state: renderRound }, onMatch: onPvpGame });
   engine.nextRound();
 }
 
@@ -325,7 +373,7 @@ function startTeamMatch() {
   // round (solo team plays every round — the 2v1 fairness rule in teamgame.js).
   engine = createTeamGame({
     db, room: lobbyId, teamA, teamB, n: ROUNDS_TO_WIN_GAME, hard: !!config.pool.hard,
-    deadHeatVoid: !config.pool.hard, deadlineMs: CLASSIC_CUTOFF_MS,
+    hardLoop: !!config.pool.hard, deadHeatVoid: !config.pool.hard, deadlineMs: CLASSIC_CUTOFF_MS,
     onTv: { state: (g, ctx) => renderTeamRound(g, ctx) },
     onGame: (r) => {
       if (r.status === 'tie-void') { el('tv-game-msg').classList.remove('final'); el('tv-game-msg').textContent = '🟰 TIE GAME — RESETTING with a new target…'; return; }
@@ -337,6 +385,7 @@ function startTeamMatch() {
 
 function renderTeamRound(g, ctx) {
   showLedger(ctx.teamA.name, ctx.winsA, ctx.teamB.name, ctx.winsB);
+  if (g.mode === 'hard') { renderHard(g, ctx); return; }
   el('tv-match-banner').textContent = `${ctx.teamA.name}  ${ctx.winsA}–${ctx.winsB}  ${ctx.teamB.name}   ·  first to ${ctx.n}`;
   const aId = ctx.activeA.playerId, bId = ctx.activeB.playerId;
   if (g.status === 'running') {
@@ -358,6 +407,7 @@ function renderTeamRound(g, ctx) {
 
 /* ---------------- rendering (PvE round + PvP duel) ---------------- */
 function renderRound(g) {
+  if (g.mode === 'hard') { renderHard(g, null); return; }
   const ids = Object.keys(g.players);
   const duel = ids.length === 2;
   if (g.status === 'running') {

@@ -6,6 +6,7 @@
 // event router (press / next / isBetween) works unchanged.
 import { createRound, randomTarget } from './round.js';
 import { classicOutcome } from './resolve.js';
+import { createHardRound, randomHardTarget } from './hardclassic.js';
 
 /** Pure: round-robin players into `numTeams` teams (sizes within 1). */
 export function distributeTeams(players, numTeams) {
@@ -24,22 +25,48 @@ export function activeMember(team, roundNum) {
 // round whose two reps share the exact same absolute deviation is voided and
 // rerun with a fresh target (same reps, no ledger dot), and the live ticker is
 // capped by deadlineMs. Omitting both preserves the original behavior.
-export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, onTv, onGame, deadHeatVoid = false, deadlineMs }) {
+// hardLoop (TR-52 §5, optional, default OFF): when set, each round runs the Hard
+// Classic 13-attempt retry loop (createHardRound) instead of a simultaneous
+// target round. Classic behavior is untouched when off.
+export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, onTv, onGame, deadHeatVoid = false, deadlineMs, hardLoop = false }) {
   let winsA = 0, winsB = 0, roundNum = 0, status = 'between';
   let currentRound = null, activeA = null, activeB = null;
+
+  const ctx = () => ({ teamA, teamB, winsA, winsB, activeA, activeB, n });
 
   function nextRound() {
     if (status === 'over') return;
     activeA = activeMember(teamA, roundNum);
     activeB = activeMember(teamB, roundNum);
     status = 'round';
-    currentRound = createRound({
-      db, room, hard, deadlineMs,
-      players: [{ playerId: activeA.playerId, name: activeA.name }, { playerId: activeB.playerId, name: activeB.name }],
-      targetMs: randomTarget(),
-      onTv: { state: (g) => { onTv?.state(g, { teamA, teamB, winsA, winsB, activeA, activeB, n }); if (g.status === 'over') resolve(g); } }
-    });
+    if (hardLoop) {
+      currentRound = createHardRound({
+        db, room,
+        repA: { playerId: activeA.playerId, name: activeA.name },
+        repB: { playerId: activeB.playerId, name: activeB.name },
+        targetMs: randomHardTarget(),
+        onTv: { state: (g) => onTv?.state(g, ctx()) },
+        onResult: (winnerId) => awardRound(winnerId),
+      });
+    } else {
+      currentRound = createRound({
+        db, room, hard, deadlineMs,
+        players: [{ playerId: activeA.playerId, name: activeA.name }, { playerId: activeB.playerId, name: activeB.name }],
+        targetMs: randomTarget(),
+        onTv: { state: (g) => { onTv?.state(g, ctx()); if (g.status === 'over') resolve(g); } }
+      });
+    }
     currentRound.begin();
+  }
+
+  // Award a Hard round's dot (winnerId from createHardRound; null = washout tie).
+  function awardRound(winnerId) {
+    if (status !== 'round') return;
+    if (!winnerId) { status = 'between'; onGame?.({ status: 'tie-void', winsA, winsB, roundNum }); return; }
+    if (winnerId === activeA.playerId) winsA += 1; else if (winnerId === activeB.playerId) winsB += 1;
+    roundNum += 1;
+    if (winsA >= n || winsB >= n) { status = 'over'; onGame?.({ status: 'over', winner: winsA >= n ? teamA : teamB, winsA, winsB }); }
+    else { status = 'between'; onGame?.({ status: 'between', winsA, winsB, roundNum }); }
   }
 
   function resolve(g) {

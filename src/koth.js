@@ -4,6 +4,7 @@
 import { ref, set, serverTimestamp } from 'firebase/database';
 import { createRound, randomTarget } from './round.js';
 import { classicOutcome } from './resolve.js';
+import { createHardRound, randomHardTarget } from './hardclassic.js';
 
 // Hard KOTH uses a fast, reactive band (0.5-3.5s) to balance exact-hit difficulty.
 function kothTarget(hard) {
@@ -16,7 +17,9 @@ import { logTransition } from './session.js';
 // exact same absolute deviation is VOIDED and rerun with a fresh target, and the
 // live ticker is capped by deadlineMs. Omitting both preserves the original PvE
 // KOTH behavior exactly.
-export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, deadHeatVoid = false, deadlineMs }) {
+// hardLoop (TR-52 §5, optional, default OFF): for a 2-player match, each round
+// runs the Hard Classic 13-attempt retry loop instead of a simultaneous round.
+export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, deadHeatVoid = false, deadlineMs, hardLoop = false }) {
   const wins = new Map(players.map((p) => [p.playerId, { playerId: p.playerId, name: p.name, wins: 0 }]));
   let roundNum = 0;
   let status = 'between'; // between | round | king
@@ -79,22 +82,44 @@ export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, 
     onMatch?.(matchState(), roundState);
   }
 
+  // Award a Hard round's dot (winnerId from createHardRound; null = washout tie).
+  function applyHardResult(winnerId) {
+    if (winnerId) {
+      const w = wins.get(winnerId); w.wins += 1;
+      logTransition('koth', 'round', 'win-awarded', `hard round ${roundNum}: ${w.name} -> ${w.wins}/${n}`);
+      status = w.wins >= n ? 'king' : 'between';
+    } else {
+      status = 'between';
+      logTransition('koth', 'round', 'no-win', `hard round ${roundNum}: void`);
+    }
+    publish();
+    onMatch?.(matchState(), null);
+  }
+
   function nextRound() {
     if (status !== 'between') return;
     roundNum += 1;
     status = 'round';
     publish();
     onMatch?.(matchState(), null);
-    currentRound = createRound({
-      db, room, players, hard, deadlineMs,
-      targetMs: kothTarget(hard),
-      onTv: {
-        state: (g) => {
-          onTv?.state(g);
-          if (g.status === 'over') applyResult(g);
+    if (hardLoop && players.length === 2) {
+      currentRound = createHardRound({
+        db, room, repA: players[0], repB: players[1], targetMs: randomHardTarget(),
+        onTv: { state: (g) => onTv?.state(g) },
+        onResult: (winnerId) => applyHardResult(winnerId),
+      });
+    } else {
+      currentRound = createRound({
+        db, room, players, hard, deadlineMs,
+        targetMs: kothTarget(hard),
+        onTv: {
+          state: (g) => {
+            onTv?.state(g);
+            if (g.status === 'over') applyResult(g);
+          }
         }
-      }
-    });
+      });
+    }
     currentRound.begin();
     logTransition('koth', 'between', 'round', `round ${roundNum}, first to ${n}`);
   }
