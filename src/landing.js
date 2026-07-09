@@ -5,6 +5,7 @@ import { BANNERS, ACHIEVEMENTS, tierBannerFor } from './cosmetics.js';
 import { ref as dbRef2, update as dbUpdate, get as dbGet2 } from 'firebase/database';
 import { DAILY_ROUNDS, dateKey, dailyTargets, todayResult, saveResult, msToMidnight, ratingColor } from './daily.js';
 import { createGuessSoloGame, GUESS_SOLO_ROUNDS } from './guesssolo.js';
+import { createCasualGame, CASUAL_ROUNDS } from './casual.js';
 import { validatePool, resolveMode, ENVIRONMENTS } from './hostconfig.js';
 import { createMatch, getMatch, submitHostScore, reconcileRecord, seededTargets, lifecycle, awaitingHost, outcomeFor } from './match.js';
 import { sfxStart, sfxStop } from './sfx.js';
@@ -37,15 +38,21 @@ async function refreshChip(user) {
 
 watchAuth(refreshChip);
 
-el('auth-name').addEventListener('click', async () => {
-  if (!currentUser) return;
+async function openProfile() {
+  if (!currentUser) {
+    // Profile lives behind Google sign-in (records/banners/achievements). Kick it off.
+    try { await signInGoogle(); }
+    catch (err) { if (err.code !== 'auth/popup-closed-by-user') console.warn('[auth]', err.code); }
+    return;
+  }
   let profile = await getProfile(db, currentUser.uid);
   if (!profile) { el('username-form').hidden = false; el('username-input').focus(); return; }
   renderProfilePanel(profile);
   el('profile-panel').hidden = false;
   // Recompute record + last-5 from completed matches (TR-36), then re-render.
   try { await reconcileRecord(db, currentUser.uid); profile = await getProfile(db, currentUser.uid); renderProfilePanel(profile); } catch { /* offline: keep cached */ }
-});
+}
+el('auth-name').addEventListener('click', openProfile);
 
 /* ---- Profile tab (TR-38) ---- */
 function earnedBanners(profile) {
@@ -392,8 +399,109 @@ el('auth-btn').addEventListener('click', async () => {
 });
 el('signout-btn').addEventListener('click', signOutUser);
 
-el('solo-btn').addEventListener('click', startGame);
-el('daily-btn').addEventListener('click', startDaily);
+/* ---- Top-level nav: Solo / Party / Profile (TR-53) ---- */
+let menuCountdownTimer = null;
+function hms(ms) {
+  const h = String(Math.floor(ms / 3600000)).padStart(2, '0');
+  const m = String(Math.floor((ms % 3600000) / 60000)).padStart(2, '0');
+  const s = String(Math.floor((ms % 60000) / 1000)).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+function updateDailyButtonLabel() {
+  const btn = el('daily-btn');
+  if (!btn) return;
+  btn.textContent = todayResult()
+    ? `Daily Royale · done — resets ${hms(msToMidnight())}`
+    : `Daily Royale · resets ${hms(msToMidnight())}`;
+}
+function showSoloMenu() {
+  el('menu').hidden = true;
+  el('solo-menu').hidden = false;
+  updateDailyButtonLabel();
+  clearInterval(menuCountdownTimer);
+  menuCountdownTimer = setInterval(updateDailyButtonLabel, 1000);
+}
+function hideSoloMenu() {
+  el('solo-menu').hidden = true;
+  clearInterval(menuCountdownTimer);
+}
+el('nav-solo')?.addEventListener('click', showSoloMenu);
+el('solo-menu-back')?.addEventListener('click', () => { hideSoloMenu(); el('menu').hidden = false; });
+el('nav-party')?.addEventListener('click', () => { el('menu').hidden = true; el('party-menu').hidden = false; });
+el('party-menu-back')?.addEventListener('click', () => { el('party-menu').hidden = true; el('menu').hidden = false; });
+el('party-host-btn')?.addEventListener('click', () => { location.href = '/tv'; });
+el('party-join-btn')?.addEventListener('click', () => {
+  const f = el('join-code-form');
+  f.hidden = !f.hidden;
+  if (!f.hidden) el('code-input').focus();
+});
+el('nav-profile')?.addEventListener('click', openProfile);
+el('casual-btn')?.addEventListener('click', () => { hideSoloMenu(); startCasual(); });
+el('daily-btn')?.addEventListener('click', () => { hideSoloMenu(); startDaily(); });
+el('solo-1v1-btn')?.addEventListener('click', () => { hideSoloMenu(); openHost1v1(); });
+el('solo-my1v1s-btn')?.addEventListener('click', () => { hideSoloMenu(); openMy1v1s(); });
+
+/* ---- Casual Play: 5 rounds, Classic + Guess mixed (TR-53) ---- */
+let casualGame = null;
+
+function renderCasualRoundStart() {
+  const m = casualGame.currentMode();
+  el('solo-round').textContent =
+    `Casual — Round ${casualGame.currentRound()} / ${CASUAL_ROUNDS} · ${m === 'classic' ? 'Tap to time' : 'Feel the gap'}`;
+  el('solo-guess-form').hidden = true;
+  el('solo-big').hidden = false;
+  el('solo-big').disabled = false;
+  el('solo-big').classList.remove('running');
+  document.querySelector('.score-wrap').hidden = false;
+  if (m === 'classic') {
+    document.querySelector('.target-row').hidden = false;
+    el('solo-target').innerHTML = `${fmtS(casualGame.currentTargetMs())}<span class="timer-unit">s</span>`;
+    setYou(null);
+    el('solo-big-label').textContent = 'TAP TO START';
+    el('solo-msg').textContent = 'Tap to start, tap to stop — no peeking.';
+  } else {
+    document.querySelector('.target-row').hidden = true;
+    el('solo-big-label').textContent = 'PLAY IT';
+    el('solo-msg').textContent = 'Tap, then feel the gap between the beeps.';
+  }
+}
+
+function startCasual() {
+  mode = 'casual';
+  clearInterval(countdownTimer);
+  el('join-code-form').hidden = true;
+  el('code-error').textContent = '';
+  el('final-score').hidden = true;
+  el('daily-countdown').hidden = true;
+  el('daily-share').hidden = true;
+  el('solo-guess-form').hidden = true;
+  casualGame = createCasualGame({ onMoment: fireMomentSolo });
+  shownTotal = 0;
+  renderScore(0);
+  el('menu').hidden = true;
+  el('solo-panel').hidden = false;
+  el('solo-results').innerHTML = '';
+  el('solo-total').hidden = true;
+  el('solo-again').hidden = true;
+  el('solo-exit').hidden = true;
+  renderCasualRoundStart();
+}
+
+function finishCasual(totalMs) {
+  el('solo-round').textContent = 'Done!';
+  document.querySelector('.target-row').hidden = true;
+  document.querySelector('.score-wrap').hidden = true;
+  const hero = el('final-score');
+  hero.hidden = false;
+  hero.innerHTML = `${fmtOff(totalMs)}<span class="timer-unit">s off</span>`;
+  el('solo-big').hidden = true;
+  el('solo-guess-form').hidden = true;
+  el('solo-msg').textContent = '';
+  el('solo-total').hidden = false;
+  el('solo-total').textContent = `Total: ${fmtOff(totalMs)}s off across ${CASUAL_ROUNDS} rounds — lower is better.`;
+  el('solo-again').hidden = false;
+  el('solo-exit').hidden = false;
+}
 
 /* ---- Solo Guess Timer (TR-29) ---- */
 let guessGame = null;
@@ -450,8 +558,6 @@ function finishGuessSolo() {
   el('solo-exit').hidden = false;
 }
 
-el('guess-solo-btn').addEventListener('click', startGuessSolo);
-
 el('solo-guess-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const v = parseFloat(el('solo-guess-input').value.replace(',', '.'));
@@ -461,6 +567,20 @@ el('solo-guess-form').addEventListener('submit', (e) => {
   }
   el('solo-guess-error').textContent = '';
   el('solo-guess-input').value = '';
+  if (mode === 'casual') {
+    const res = casualGame.submitGuess(Math.round(v * 1000));
+    if (!res) return;
+    appendResult(res.attempt, casualGame.currentRound() - 1);
+    el('solo-guess-form').hidden = true;
+    el('solo-big').hidden = false;
+    el('solo-msg').textContent = `Off by ${fmtOff(res.attempt.deviationMs)}s`;
+    const newTotal = shownTotal + res.attempt.deviationMs;
+    countUpScore(shownTotal, newTotal);
+    shownTotal = newTotal;
+    if (res.type === 'finished') finishCasual(res.totalMs);
+    else renderCasualRoundStart();
+    return;
+  }
   const attempt = guessGame.submitGuess(Math.round(v * 1000));
   if (!attempt) return;
   appendResult({ targetMs: attempt.actualMs, elapsedMs: attempt.guessMs, deviationMs: attempt.deltaMs },
@@ -469,11 +589,6 @@ el('solo-guess-form').addEventListener('submit', (e) => {
   else renderGuessRoundStart();
 });
 el('daily-share').addEventListener('click', shareScoreCard);
-el('join-game-btn').addEventListener('click', () => {
-  const f = el('join-code-form');
-  f.hidden = !f.hidden;
-  if (!f.hidden) el('code-input').focus();
-});
 el('join-code-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const code = el('code-input').value.trim().toUpperCase();
@@ -483,7 +598,11 @@ el('join-code-form').addEventListener('submit', (e) => {
   }
   location.href = `/play/${code}`;
 });
-el('solo-again').addEventListener('click', () => (mode === 'guess-solo' ? startGuessSolo() : startGame()));
+el('solo-again').addEventListener('click', () => {
+  if (mode === 'casual') return startCasual();
+  if (mode === 'guess-solo') return startGuessSolo();
+  return startGame();
+});
 el('solo-exit').addEventListener('click', () => {
   clearInterval(countdownTimer);
   el('final-score').hidden = true;
@@ -497,6 +616,48 @@ el('solo-big').addEventListener('pointerdown', (e) => {
   const btn = el('solo-big');
   btn.classList.add('pressed');
   setTimeout(() => btn.classList.remove('pressed'), 150);
+  if (mode === 'casual') {
+    if (casualGame.currentMode() === 'guess') {
+      if (casualGame.getState() !== 'ready') return;
+      btn.disabled = true;
+      el('solo-big-label').textContent = '👂 …';
+      el('solo-msg').textContent = 'Listen…';
+      casualGame.arm(() => {
+        btn.hidden = true;
+        el('solo-guess-form').hidden = false;
+        el('solo-guess-submit').disabled = false;
+        el('solo-guess-input').focus();
+        el('solo-msg').textContent = 'How long was that?';
+      });
+      return;
+    }
+    const cres = casualGame.press();
+    if (cres.type === 'started') {
+      sfxStart();
+      btn.classList.add('running');
+      el('solo-big-label').textContent = 'TAP TO STOP';
+      el('solo-msg').textContent = '';
+    } else if (cres.type === 'stopped' || cres.type === 'finished') {
+      sfxStop();
+      btn.classList.remove('running');
+      setYou(cres.attempt.elapsedMs);
+      appendResult(cres.attempt, casualGame.currentRound() - 1);
+      el('solo-msg').textContent = `Off by ${fmtOff(cres.attempt.deviationMs)}s`;
+      btn.disabled = true;
+      flyDifference(cres.attempt.deviationMs, () => {
+        const newTotal = shownTotal + cres.attempt.deviationMs;
+        countUpScore(shownTotal, newTotal);
+        shownTotal = newTotal;
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.hidden = false;
+          if (cres.type === 'finished') finishCasual(cres.totalMs);
+          else renderCasualRoundStart();
+        }, 700);
+      });
+    }
+    return;
+  }
   if (mode === 'guess-solo') {
     if (guessGame.getState() !== 'ready') return;
     btn.disabled = true;
@@ -549,16 +710,11 @@ el('solo-big').addEventListener('pointerdown', (e) => {
 /* ---- Host branching: Screen-1 select + async 1v1 (TR-46 / TR-34, send-first) ---- */
 let hostCtx = null; // set only while the host plays THEIR half of a claimed match
 
-el('host-link').addEventListener('click', (e) => { e.preventDefault(); el('menu').hidden = true; el('host-choice').hidden = false; });
-el('host-choice-back').addEventListener('click', () => { el('host-choice').hidden = true; el('menu').hidden = false; });
-el('host-party-btn').addEventListener('click', () => { location.href = '/tv'; });
-
-el('host-1v1-btn').addEventListener('click', () => {
-  el('host-choice').hidden = true;
+function openHost1v1() {
   el('host-1v1-panel').hidden = false;
   el('host-1v1-result').hidden = true;
   el('host-1v1-msg').textContent = currentUser ? '' : 'Sign in (top of screen) to create a ranked 1v1.';
-});
+}
 el('host-1v1-back').addEventListener('click', () => { el('host-1v1-panel').hidden = true; el('menu').hidden = false; });
 
 el('host-1v1-play').addEventListener('click', async () => {
@@ -588,7 +744,6 @@ el('host-1v1-copy').addEventListener('click', async () => {
 });
 
 /* My 1v1s — list the host's matches; play your half when the challenger has finished */
-el('my-1v1s-btn').addEventListener('click', () => { el('host-choice').hidden = true; openMy1v1s(); });
 el('my-1v1s-back').addEventListener('click', () => { el('my-1v1s-panel').hidden = true; el('menu').hidden = false; });
 
 async function openMy1v1s() {
