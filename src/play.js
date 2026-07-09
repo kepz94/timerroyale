@@ -23,6 +23,7 @@ let me = null;
 let players = [];
 let gameState = null;
 let matchState = null;
+let guessDigits = '';
 
 async function boot() {
   const rc = el('reconnect-btn'); if (rc) rc.addEventListener('click', () => location.reload());
@@ -63,6 +64,23 @@ el('big-press').addEventListener('pointerdown', (e) => {
 });
 el('next-round-btn').addEventListener('click', () => { if (me) sendEvent(db, code, me.playerId, 'next'); });
 
+/* ---- Guess Timer numeric keypad ---- */
+function updateGuessDisplay() { const d = el('guess-display'); if (d) d.innerHTML = `${guessDigits || '0'}<span class="gd-unit">s</span>`; }
+document.querySelectorAll('#guess-keys [data-k]').forEach((b) => b.addEventListener('click', () => {
+  const k = b.dataset.k;
+  if (k === 'back') guessDigits = guessDigits.slice(0, -1);
+  else if (k === '.') { if (!guessDigits.includes('.')) guessDigits += (guessDigits === '' ? '0.' : '.'); }
+  else if (guessDigits.replace('.', '').length < 5) guessDigits += k;
+  updateGuessDisplay();
+}));
+el('guess-submit')?.addEventListener('click', () => {
+  const secs = parseFloat(guessDigits);
+  if (!me || !Number.isFinite(secs) || secs <= 0) return;
+  sendEvent(db, code, me.playerId, 'guess', { value: Math.round(secs * 1000) });
+  if (navigator.vibrate) navigator.vibrate(30);
+  guessDigits = ''; updateGuessDisplay();
+});
+
 const nameOfLocal = (pid) => (players.find((p) => p.playerId === pid) || {}).name || pid;
 el('draft-name-form').addEventListener('submit', (e) => { e.preventDefault(); const v = el('draft-name-input').value.trim(); if (me && v) sendEvent(db, code, me.playerId, 'team-name', { name: v }); el('draft-name-input').value = ''; });
 document.querySelectorAll('#draft-emoji .emoji-btn').forEach((b) => b.addEventListener('click', () => { if (me) sendEvent(db, code, me.playerId, 'team-emoji', { emoji: b.textContent }); }));
@@ -74,6 +92,7 @@ function renderDraftUI() {
   el('draft-panel').hidden = false;
   el('big-press').hidden = true; el('dpad').hidden = true; el('next-round-btn').hidden = true;
   if (el('result-panel')) el('result-panel').hidden = true;
+  if (el('guess-panel')) el('guess-panel').hidden = true;
   const iAmCaptain = (d.teams || []).some((t) => t.captainId === me?.playerId);
   const isMyPick = d.status === 'drafting' && d.teams?.[d.turn]?.captainId === me?.playerId;
   const pool = el('draft-pool'); pool.innerHTML = '';
@@ -110,7 +129,7 @@ function renderResult() {
   if (!panel) return;
   const g = gameState;
   const mine = g && g.players ? g.players[me?.playerId] : null;
-  if (!g || g.mode !== 'target' || !mine) { panel.hidden = true; return; } // hard mode uses its own TV screen
+  if (!g || g.mode !== 'target' || !mine) { panel.hidden = true; return; } // hard/guess have their own UIs
   if (g.status === 'over') {
     const rows = Object.keys(g.players).map((id) => {
       const s = g.players[id];
@@ -131,20 +150,44 @@ function renderResult() {
   }
 }
 
+// Guess Timer controller: the phone is a private numeric keypad. Show it only
+// during the submission window if you're a contender this round.
+function renderGuessPhone() {
+  const panel = el('guess-panel'); if (!panel) return;
+  const g = gameState;
+  const mine = g && g.players ? g.players[me?.playerId] : null;
+  const banner = el('turn-banner');
+  if (!mine) { panel.hidden = true; if (banner) banner.textContent = '👀 Watch the TV — guess round in progress!'; return; }
+  if (g.status === 'guessing' && mine.state !== 'guessed') {
+    panel.hidden = false;
+    el('guess-phone-status').textContent = '🚨 How long was the timer? Type your guess:';
+  } else if (g.status === 'guessing' && mine.state === 'guessed') {
+    panel.hidden = true;
+    if (banner) banner.textContent = '🔒 Locked in — watch the reveal on the TV!';
+  } else if (g.status === 'over') {
+    panel.hidden = true; guessDigits = ''; updateGuessDisplay();
+    if (banner) banner.textContent = '👀 Check the reveal on the TV!';
+  } else { // ready | get-ready | interval
+    panel.hidden = true;
+    if (banner) banner.textContent = '👂 Watch & listen — the timer is running (hidden)!';
+  }
+}
+
 function renderPhase() {
   if (matchState && matchState.type === 'draft') { renderDraftUI(); return; }
   if (el('draft-panel')) el('draft-panel').hidden = true;
   const host = hostPlayer();
   const iAmHost = host && me && host.playerId === me.playerId;
-  const active = gameState?.status === 'running';
+  const guessMode = gameState?.mode === 'guess';
+  const active = guessMode ? (gameState.status && gameState.status !== 'over') : (gameState?.status === 'running');
   const over = ['king', 'champion'].includes(matchState?.status);
   const inMatch = matchState != null;
   const phase = over ? 'over' : active ? 'active' : inMatch ? 'intermission' : 'setup';
 
   if (el('dpad')) el('dpad').hidden = !(iAmHost && phase === 'setup');
   const inThisRound = phase === 'active' && me && gameState?.players && gameState.players[me.playerId];
-  if (el('big-press')) el('big-press').hidden = !inThisRound;
-  if (inThisRound) {
+  if (el('big-press')) el('big-press').hidden = !inThisRound || guessMode;
+  if (inThisRound && !guessMode) {
     const st = gameState.players?.[me.playerId]?.state;
     const btn = el('big-press'); const lbl = el('big-press-label');
     if (st === 'running') { btn.classList.add('running'); btn.disabled = false; if (lbl) lbl.textContent = 'TAP TO STOP'; }
@@ -154,12 +197,14 @@ function renderPhase() {
   if (el('next-round-btn')) el('next-round-btn').hidden = !(iAmHost && phase === 'intermission');
 
   renderResult();
+  if (guessMode && phase === 'active') renderGuessPhone();
+  else if (el('guess-panel')) el('guess-panel').hidden = true;
 
   const banner = el('turn-banner');
-  if (banner) {
+  if (banner && !(guessMode && phase === 'active')) {
     if (!me) banner.textContent = '';
     else if (phase === 'active') banner.textContent = inThisRound ? '⏱ Tap to start, tap to stop — time it blind!' : '👀 Watching — you\'re up soon!';
-    else if (phase === 'intermission') banner.textContent = iAmHost ? 'Round over — tap Next Round when ready.' : 'Round over — waiting for the host…';
+    else if (phase === 'intermission') banner.textContent = iAmHost ? 'Round over — tap Next when ready.' : 'Round over — waiting for the host…';
     else if (phase === 'over') banner.textContent = '🏆 Game over — check the TV!';
     else if (iAmHost) banner.textContent = '⭐ You are the HOST — set up the game on the TV with the remote.';
     else if (host) banner.textContent = `Host: ${host.name}. Waiting for the game to start…`;

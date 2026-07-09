@@ -7,6 +7,7 @@
 import { createRound, randomTarget } from './round.js';
 import { classicOutcome } from './resolve.js';
 import { createHardRound, randomHardTarget } from './hardclassic.js';
+import { createGuessRound, randomGuessTarget } from './guess.js';
 
 /** Pure: round-robin players into `numTeams` teams (sizes within 1). */
 export function distributeTeams(players, numTeams) {
@@ -28,7 +29,7 @@ export function activeMember(team, roundNum) {
 // hardLoop (TR-52 §5, optional, default OFF): when set, each round runs the Hard
 // Classic 13-attempt retry loop (createHardRound) instead of a simultaneous
 // target round. Classic behavior is untouched when off.
-export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, onTv, onGame, deadHeatVoid = false, deadlineMs, hardLoop = false, targetFn, perPlayerStopMs }) {
+export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, onTv, onGame, deadHeatVoid = false, deadlineMs, hardLoop = false, guessLoop = false, onMoment, targetFn, perPlayerStopMs }) {
   let winsA = 0, winsB = 0, roundNum = 0, status = 'between';
   let currentRound = null, activeA = null, activeB = null;
 
@@ -39,7 +40,15 @@ export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, on
     activeA = activeMember(teamA, roundNum);
     activeB = activeMember(teamB, roundNum);
     status = 'round';
-    if (hardLoop) {
+    if (guessLoop) {
+      currentRound = createGuessRound({
+        db, room,
+        players: [{ playerId: activeA.playerId, name: activeA.name }, { playerId: activeB.playerId, name: activeB.name }],
+        targetMs: randomGuessTarget(),
+        onTv: { state: (g) => { onTv?.state(g, ctx()); if (g.status === 'over') resolve(g); } },
+        onMoment: (m) => onMoment?.(m),
+      });
+    } else if (hardLoop) {
       currentRound = createHardRound({
         db, room,
         repA: { playerId: activeA.playerId, name: activeA.name },

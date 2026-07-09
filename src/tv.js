@@ -131,9 +131,10 @@ function showScreen(s) {
   el('tv-active').hidden = s !== 'active';
   el('tv-reveal').hidden = s !== 'reveal';
   el('tv-hard').hidden = s !== 'hard';
+  el('tv-guess').hidden = s !== 'guess';
   el('tv-bracket').hidden = s !== 'bracket';
   if (s !== 'bracket') el('tv-rotation').textContent = '';
-  if (s === 'reveal' || s === 'hard' || s === 'bracket') el('tv-standings').hidden = true;
+  if (s === 'reveal' || s === 'hard' || s === 'bracket' || s === 'guess') el('tv-standings').hidden = true;
   if (s === 'bracket') { el('tv-ledger').hidden = true; el('tv-turn').hidden = true; }
   if (entering) showRoundHint(s);
 }
@@ -233,6 +234,61 @@ function fillRows(g, labelById) {
     li.innerHTML = `<span class="row-name">${medal}${lbl}${s.name}</span><span class="row-time">${time}</span>`;
     rows.appendChild(li);
   });
+}
+
+// Guess Timer start/stop sensory cue (green flash on start, red on stop).
+function flashCue(kind) {
+  const f = el('tv-flash'); if (!f) return;
+  f.classList.remove('green', 'red'); void f.offsetWidth;
+  f.classList.add(kind === 'start' ? 'green' : 'red');
+  setTimeout(() => f.classList.remove('green', 'red'), 500);
+}
+
+// Guess Timer phase screens: observation (clock hidden) -> suspense (locking in)
+// -> reveal (actual time + each guess + winner). teamCtx supplies team names.
+function renderGuess(g, teamCtx) {
+  showScreen('guess');
+  const ids = Object.keys(g.players);
+  const labelFor = (id, i) => teamCtx ? (i === 0 ? teamCtx.teamA.name : teamCtx.teamB.name) : (g.players[id].name);
+  el('tv-match-banner').textContent = teamCtx
+    ? `${teamCtx.teamA.name}  ${teamCtx.winsA}–${teamCtx.winsB}  ${teamCtx.teamB.name}   ·  GUESS THE CLOCK`
+    : 'GUESS THE CLOCK';
+  const actual = el('guess-actual'), cards = el('guess-cards');
+  if (g.status === 'over') {
+    el('guess-head').textContent = 'THE REVEAL';
+    actual.hidden = false;
+    actual.innerHTML = `ACTUAL ${fmtS2(g.actualMs)}<span class="timer-unit">s</span>`;
+    cards.innerHTML = '';
+    ids.forEach((id, i) => {
+      const s = g.players[id];
+      const isWin = g.winner && g.winner.playerId === id;
+      const guess = s.guessMs != null ? `${fmtS2(s.guessMs)}s` : '0.00s';
+      const dev = s.guessMs != null ? `DEVIATION ${fmtSigned(s.guessMs - g.actualMs)}s` : 'no guess';
+      const card = document.createElement('div');
+      card.className = 'reveal-card' + (isWin ? ' win' : '');
+      card.innerHTML = `<div class="rc-team">${labelFor(id, i)}</div><div class="rc-name">${s.name}</div><div class="rc-time">${guess}</div><div class="rc-dev">${dev}</div>`;
+      cards.appendChild(card);
+    });
+    el('guess-winner').textContent = g.winner ? `🏆 ${labelFor(g.winner.playerId, ids.indexOf(g.winner.playerId))} wins the round! (+1)` : 'No winner';
+  } else if (g.status === 'guessing') {
+    el('guess-head').textContent = '🚨 TIME IS UP — SUBMIT YOUR GUESS!';
+    actual.hidden = true;
+    cards.innerHTML = '';
+    ids.forEach((id, i) => {
+      const s = g.players[id];
+      const locked = s.state === 'guessed';
+      const card = document.createElement('div');
+      card.className = 'reveal-card' + (locked ? ' win' : '');
+      card.innerHTML = `<div class="rc-team">${labelFor(id, i)}</div><div class="rc-name">${s.name}</div><div class="rc-time" style="font-size:clamp(2rem,5vw,5rem)">${locked ? 'LOCKED IN 🔒' : 'THINKING…'}</div>`;
+      cards.appendChild(card);
+    });
+    el('guess-winner').textContent = '';
+  } else { // ready | get-ready | interval
+    el('guess-head').textContent = g.status === 'interval' ? '⏱️ TIMER RUNNING — clock hidden!' : 'GET READY…';
+    actual.hidden = true;
+    cards.innerHTML = '';
+    el('guess-winner').textContent = ids.length === 2 ? `Representing: ${labelFor(ids[0], 0)}  vs  ${labelFor(ids[1], 1)}` : '';
+  }
 }
 
 // The Reveal screen: one big card per contender (recorded time + signed
@@ -351,7 +407,8 @@ function startBracketGame() {
   const two = [{ playerId: curMatch.a.id, name: curMatch.a.name }, { playerId: curMatch.b.id, name: curMatch.b.name }];
   // A GAME = first to ROUNDS_TO_WIN_GAME round-wins (TR-52). Party Classic opts
   // into the dead-heat void + 20s hostage cutoff (Hard runs exact-hit as-is).
-  engine = createKoth({ db, room: lobbyId, players: two, n: ROUNDS_TO_WIN_GAME, hard: !!config.pool.hard, hardLoop: !!config.pool.hard, deadHeatVoid: !config.pool.hard, perPlayerStopMs: 30000, targetFn: config.pool.hard ? undefined : createClassicTargets(), onTv: { state: renderRound }, onMatch: onPvpGame });
+  const guessOnly = !!config.pool.guess && !config.pool.classic && !config.pool.hard;
+  engine = createKoth({ db, room: lobbyId, players: two, n: ROUNDS_TO_WIN_GAME, hard: !!config.pool.hard, hardLoop: !!config.pool.hard, guessLoop: guessOnly, onMoment: flashCue, deadHeatVoid: !config.pool.hard && !guessOnly, perPlayerStopMs: 30000, targetFn: config.pool.hard ? undefined : createClassicTargets(), onTv: { state: renderRound }, onMatch: onPvpGame });
   engine.nextRound();
 }
 
@@ -430,9 +487,11 @@ function startTeamMatch() {
   const teamA = curMatch.a, teamB = curMatch.b; // entrants carry {id,name,members}
   // A GAME = first to ROUNDS_TO_WIN_GAME round-wins; active member rotates each
   // round (solo team plays every round — the 2v1 fairness rule in teamgame.js).
+  const guessOnly = !!config.pool.guess && !config.pool.classic && !config.pool.hard;
   engine = createTeamGame({
     db, room: lobbyId, teamA, teamB, n: ROUNDS_TO_WIN_GAME, hard: !!config.pool.hard,
-    hardLoop: !!config.pool.hard, deadHeatVoid: !config.pool.hard,
+    hardLoop: !!config.pool.hard, guessLoop: guessOnly, onMoment: flashCue,
+    deadHeatVoid: !config.pool.hard && !guessOnly,
     perPlayerStopMs: 30000, targetFn: config.pool.hard ? undefined : createClassicTargets(),
     onTv: { state: (g, ctx) => renderTeamRound(g, ctx) },
     onGame: (r) => {
@@ -446,6 +505,7 @@ function startTeamMatch() {
 function renderTeamRound(g, ctx) {
   showLedger(ctx.teamA.name, ctx.winsA, ctx.teamB.name, ctx.winsB);
   if (g.mode === 'hard') { renderHard(g, ctx); return; }
+  if (g.mode === 'guess') { renderGuess(g, ctx); return; }
   el('tv-match-banner').textContent = `${ctx.teamA.name}  ${ctx.winsA}–${ctx.winsB}  ${ctx.teamB.name}   ·  first to ${ctx.n}`;
   const aId = ctx.activeA.playerId, bId = ctx.activeB.playerId;
   if (g.status === 'running') {
@@ -484,6 +544,7 @@ function renderTeamRound(g, ctx) {
 /* ---------------- rendering (PvE round + PvP duel) ---------------- */
 function renderRound(g) {
   if (g.mode === 'hard') { renderHard(g, null); return; }
+  if (g.mode === 'guess') { renderGuess(g, null); return; }
   if (el('tv-clocks')) el('tv-clocks').hidden = true; // live clocks are Team-only
   stopClockLoop();
   const ids = Object.keys(g.players);

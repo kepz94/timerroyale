@@ -5,6 +5,7 @@ import { ref, set, serverTimestamp } from 'firebase/database';
 import { createRound, randomTarget } from './round.js';
 import { classicOutcome } from './resolve.js';
 import { createHardRound, randomHardTarget } from './hardclassic.js';
+import { createGuessRound, randomGuessTarget } from './guess.js';
 
 // Hard KOTH uses a fast, reactive band (0.5-3.5s) to balance exact-hit difficulty.
 function kothTarget(hard) {
@@ -19,7 +20,7 @@ import { logTransition } from './session.js';
 // KOTH behavior exactly.
 // hardLoop (TR-52 §5, optional, default OFF): for a 2-player match, each round
 // runs the Hard Classic 13-attempt retry loop instead of a simultaneous round.
-export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, deadHeatVoid = false, deadlineMs, hardLoop = false, targetFn, perPlayerStopMs }) {
+export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, deadHeatVoid = false, deadlineMs, hardLoop = false, guessLoop = false, onMoment, targetFn, perPlayerStopMs }) {
   const wins = new Map(players.map((p) => [p.playerId, { playerId: p.playerId, name: p.name, wins: 0 }]));
   let roundNum = 0;
   let status = 'between'; // between | round | king
@@ -102,7 +103,13 @@ export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, 
     status = 'round';
     publish();
     onMatch?.(matchState(), null);
-    if (hardLoop && players.length === 2) {
+    if (guessLoop) {
+      currentRound = createGuessRound({
+        db, room, players, targetMs: randomGuessTarget(),
+        onTv: { state: (g) => { onTv?.state(g); if (g.status === 'over') applyResult(g); } },
+        onMoment: (m) => onMoment?.(m),
+      });
+    } else if (hardLoop && players.length === 2) {
       currentRound = createHardRound({
         db, room, repA: players[0], repB: players[1], targetMs: randomHardTarget(),
         onTv: { state: (g) => onTv?.state(g) },
