@@ -73,13 +73,14 @@ function renderPhase() {
   const phase = over ? 'over' : active ? 'active' : inMatch ? 'intermission' : 'setup';
 
   if (el('dpad')) el('dpad').hidden = !(iAmHost && phase === 'setup');
-  if (el('big-press')) el('big-press').hidden = phase !== 'active';
+  const inThisRound = phase === 'active' && me && gameState?.players && gameState.players[me.playerId];
+  if (el('big-press')) el('big-press').hidden = !inThisRound;
   if (el('next-round-btn')) el('next-round-btn').hidden = !(iAmHost && phase === 'intermission');
 
   const banner = el('turn-banner');
   if (banner) {
     if (!me) banner.textContent = '';
-    else if (phase === 'active') banner.textContent = '⏱ Tap to start, tap to stop — time it blind!';
+    else if (phase === 'active') banner.textContent = inThisRound ? '⏱ Tap to start, tap to stop — time it blind!' : '👀 Watching — you\'re up soon!';
     else if (phase === 'intermission') banner.textContent = iAmHost ? 'Round over — tap Next Round when ready.' : 'Round over — waiting for the host…';
     else if (phase === 'over') banner.textContent = '🏆 Game over — check the TV!';
     else if (iAmHost) banner.textContent = '⭐ You are the HOST — set up the game on the TV with the remote.';
