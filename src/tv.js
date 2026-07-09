@@ -2,8 +2,10 @@
 // (KOTH/LMS) and PvP/Teams tournaments launch on the TV; phones send press,
 // host paces rounds with Next Round. TR-52: the party tournament hierarchy runs
 // through tournament.js — a GAME is first to 5 round-wins, a MATCH is Best-of-5
-// games (first to 3), matches alternate on the board after each completed game
-// during a tier, and Grand Finals Mode locks onto the final two teams.
+// games (first to 3), matches alternate on the board after each completed game,
+// and Grand Finals Mode locks onto the final two teams. The board moves through
+// distinct STATE SCREENS: Active gameplay -> Reveal (recorded times + winner) ->
+// Bracket intermission (between games).
 import QRCode from 'qrcode';
 import { registerSW } from 'virtual:pwa-register';
 registerSW({ immediate: true });
@@ -105,6 +107,70 @@ function render() {
   items.forEach((it, i) => { const li = document.createElement('li'); li.textContent = it.label; if (i === focus) li.classList.add('focused'); list.appendChild(li); });
 }
 
+/* ---------------- state-screen helpers (TR-52) ---------------- */
+// Toggle the three distinct board screens. 'active' = live gameplay,
+// 'reveal' = the recorded-times card layout, 'bracket' = the between-games tree.
+function showScreen(s) {
+  el('tv-active').hidden = s !== 'active';
+  el('tv-reveal').hidden = s !== 'reveal';
+  el('tv-bracket').hidden = s !== 'bracket';
+  if (s !== 'bracket') el('tv-rotation').textContent = '';
+  if (s === 'bracket') { el('tv-ledger').hidden = true; el('tv-standings').hidden = true; el('tv-turn').hidden = true; }
+}
+
+function showLedger(aName, aWon, bName, bWon) {
+  const l = el('tv-ledger');
+  l.hidden = false;
+  l.innerHTML =
+    `<div class="team"><span class="name">${aName}</span><span class="dot-strip">${dots(aWon, '🔵', '⚪')}</span></div>` +
+    `<div class="team"><span class="name">${bName}</span><span class="dot-strip">${dots(bWon, '🔴', '⚪')}</span></div>`;
+}
+
+// Live status rows for the active screen (also used for PvE ranking).
+function fillRows(g, labelById) {
+  const rows = el('tv-round-rows'); rows.innerHTML = '';
+  const order = g.status === 'over' && g.ranking
+    ? g.ranking.concat(Object.keys(g.players).filter((id) => !g.ranking.includes(id)))
+    : Object.keys(g.players);
+  order.forEach((id) => {
+    const s = g.players[id];
+    const li = document.createElement('li'); li.className = `round-row ${s.state}`;
+    const time = s.state === 'stopped'
+      ? `${fmtS2(s.elapsedMs)}s <span class="deviation">Δ ${fmtSigned(s.elapsedMs - g.targetMs)}s</span>`
+      : s.state === 'dnf' ? 'DNF' : s.state === 'running' ? '⏱…' : '—';
+    const medal = g.status === 'over' && g.ranking?.[0] === id ? '🏆 ' : '';
+    const lbl = labelById && labelById[id] ? `${labelById[id]}: ` : '';
+    li.innerHTML = `<span class="row-name">${medal}${lbl}${s.name}</span><span class="row-time">${time}</span>`;
+    rows.appendChild(li);
+  });
+}
+
+// The Reveal screen: one big card per contender (recorded time + signed
+// deviation), clutch highlight (winning deviation within 0.05s) and a
+// shattered-glass treatment on a DNF.
+function renderReveal(contenders, winnerId) {
+  showScreen('reveal');
+  const winner = contenders.find((c) => c.playerId === winnerId) || null;
+  const clutch = !!(winner && winner.state === 'stopped' && Math.abs(winner.elapsedMs - winner.targetMs) <= 50);
+  const wrap = el('reveal-cards'); wrap.innerHTML = '';
+  contenders.forEach((c) => {
+    const isWin = c.playerId === winnerId;
+    const card = document.createElement('div');
+    card.className = 'reveal-card' + (isWin ? (clutch ? ' win clutch' : ' win') : '') + (c.state === 'dnf' ? ' dnf' : '');
+    const time = c.state === 'stopped' ? `${fmtS2(c.elapsedMs)}s` : c.state === 'dnf' ? 'DNF' : '—';
+    const dev = c.state === 'stopped' ? `DEVIATION ${fmtSigned(c.elapsedMs - c.targetMs)}s` : (c.state === 'dnf' ? 'DID NOT FINISH' : '');
+    card.innerHTML = `<div class="rc-team">${c.team || ''}</div><div class="rc-name">${c.name}</div><div class="rc-time">${time}</div><div class="rc-dev">${dev}</div>`;
+    wrap.appendChild(card);
+  });
+  el('reveal-head').textContent = 'ROUND COMPLETE';
+  el('reveal-sub').textContent = 'Recorded times';
+  const banner = el('reveal-winner');
+  banner.classList.toggle('clutch', clutch);
+  banner.textContent = winner
+    ? (clutch ? `🏆 CLUTCH WINNER: ${winner.name} (within 0.05s)` : `🏆 ${winner.name} wins the round! (+1)`)
+    : 'No winner — host taps Next Round.';
+}
+
 /* ---------------- launch ---------------- */
 const activePlayers = () => players.filter((p) => p.connected !== false).map(({ playerId, name, members }) => ({ playerId, name, members }));
 
@@ -153,9 +219,11 @@ function launchPvp() {
   nextTourneyGame();
 }
 
-// Rotate onto the next game per the Match Rotation Loop / Grand Finals lock.
+// Rotate onto the next game per the Match Rotation Loop / Grand Finals lock, and
+// show the bracket-intermission takeover while the room gets ready.
 function nextTourneyGame() {
   engine = null;
+  el('tv-ledger').hidden = true;
   if (tourney.isComplete()) {
     renderBracket();
     renderChampion(bracket.champion);
@@ -163,13 +231,12 @@ function nextTourneyGame() {
     return;
   }
   curMatch = tourney.current();
-  renderBracket();
   const gf = tourney.isGrandFinals();
-  el('tv-match-banner').textContent = gf ? '🏆 GRAND FINALS — Best of 5' : (isTeams ? 'Teams Tournament' : 'PvP Tournament');
-  el('tv-target').innerHTML = '';
-  el('tv-round-rows').innerHTML = '';
+  renderBracket(); // shows the bracket screen
+  el('tv-match-banner').textContent = gf ? '🏆 GRAND FINALS — BEST OF 5' : 'TOURNAMENT BRACKET — BEST OF 5';
+  el('tv-rotation').textContent = `Next up: ${curMatch.a.name} vs ${curMatch.b.name} — first to ${ROUNDS_TO_WIN_GAME} takes the game`;
   el('tv-game-msg').classList.remove('final');
-  el('tv-game-msg').textContent = `${gf ? 'Grand Finals — ' : ''}Next up: ${curMatch.a.name} vs ${curMatch.b.name} — first to ${ROUNDS_TO_WIN_GAME} takes the game!`;
+  el('tv-game-msg').textContent = 'Get ready — the next game is starting…';
   setTimeout(isTeams ? startTeamMatch : startBracketGame, 2600);
 }
 
@@ -182,12 +249,13 @@ function startBracketGame() {
 }
 
 function onPvpGame(m) {
-  renderKoth(m, true);
+  const aWins = (m.tally.find((t) => t.playerId === curMatch.a.id) || {}).wins || 0;
+  const bWins = (m.tally.find((t) => t.playerId === curMatch.b.id) || {}).wins || 0;
+  showLedger(curMatch.a.name, aWins, curMatch.b.name, bWins);
   if (m.tieVoid) { el('tv-game-msg').classList.remove('final'); el('tv-game-msg').textContent = '🟰 TIE GAME — RESETTING with a new target…'; return; }
   if (m.status === 'king') {
     tourney.reportGame(curMatch.id, m.king.playerId); // credit the game + rotate
     engine = null;
-    renderBracket();
     setTimeout(nextTourneyGame, 2600);
   }
 }
@@ -232,9 +300,10 @@ function finalizeDraft() {
 }
 function renderDraft() {
   if (!draftState) return;
+  showScreen('active');
+  el('tv-active').hidden = true; el('tv-reveal').hidden = true; el('tv-bracket').hidden = true;
+  el('tv-ledger').hidden = true; el('tv-standings').hidden = false;
   el('tv-match-banner').textContent = draftState.status === 'drafting' ? '📋 CAPTAIN DRAFT' : '🏷️ NAME YOUR TEAMS';
-  el('tv-target').innerHTML = '';
-  el('tv-round-rows').innerHTML = '';
   const st = el('tv-standings'); st.innerHTML = '';
   draftState.teams.forEach((t, i) => {
     const li = document.createElement('li');
@@ -260,55 +329,67 @@ function startTeamMatch() {
     onTv: { state: (g, ctx) => renderTeamRound(g, ctx) },
     onGame: (r) => {
       if (r.status === 'tie-void') { el('tv-game-msg').classList.remove('final'); el('tv-game-msg').textContent = '🟰 TIE GAME — RESETTING with a new target…'; return; }
-      if (r.status === 'over') { tourney.reportGame(curMatch.id, r.winner.id); engine = null; renderBracket(); setTimeout(nextTourneyGame, 2600); }
+      if (r.status === 'over') { tourney.reportGame(curMatch.id, r.winner.id); engine = null; setTimeout(nextTourneyGame, 2600); }
     }
   });
   engine.nextRound();
 }
 
 function renderTeamRound(g, ctx) {
-  const ledgerA = dots(ctx.winsA, '🔵', '⚪'), ledgerB = dots(ctx.winsB, '🔴', '⚪');
-  el('tv-match-banner').textContent = `${ctx.teamA.name} ${ledgerA} ${ctx.winsA}–${ctx.winsB} ${ledgerB} ${ctx.teamB.name}`;
-  el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
-  const label = { [ctx.activeA.playerId]: ctx.teamA.name, [ctx.activeB.playerId]: ctx.teamB.name };
-  const rows = el('tv-round-rows'); rows.innerHTML = '';
-  Object.keys(g.players).forEach((id) => {
-    const s = g.players[id];
-    const li = document.createElement('li'); li.className = `round-row ${s.state}`;
-    const time = s.state === 'stopped' ? `${fmtS2(s.elapsedMs)}s <span class="deviation">Δ ${fmtSigned(s.elapsedMs - g.targetMs)}s</span>` : s.state === 'dnf' ? 'DNF' : s.state === 'running' ? '⏱…' : '—';
-    const medal = g.status === 'over' && g.ranking?.[0] === id ? '🏆 ' : '';
-    li.innerHTML = `<span class="row-name">${medal}${label[id] || ''}: ${s.name}</span><span class="row-time">${time}</span>`;
-    rows.appendChild(li);
-  });
-  const msg = el('tv-game-msg'); msg.classList.toggle('final', g.status === 'over');
-  msg.textContent = g.status === 'running' ? 'Active players — tap to time it blind!' : g.status === 'over' ? (g.winner ? `Round to ${label[g.winner.playerId] || g.winner.name}!` : 'No winner — host taps Next Round.') : '';
-  renderBracket();
+  showLedger(ctx.teamA.name, ctx.winsA, ctx.teamB.name, ctx.winsB);
+  el('tv-match-banner').textContent = `${ctx.teamA.name}  ${ctx.winsA}–${ctx.winsB}  ${ctx.teamB.name}   ·  first to ${ctx.n}`;
+  const aId = ctx.activeA.playerId, bId = ctx.activeB.playerId;
+  if (g.status === 'running') {
+    showScreen('active');
+    el('tv-target-label').hidden = false;
+    el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
+    el('tv-turn').hidden = false;
+    el('tv-turn').textContent = `${ctx.teamA.name}: ${ctx.activeA.name}   vs   ${ctx.teamB.name}: ${ctx.activeB.name}`;
+    fillRows(g, { [aId]: ctx.teamA.name, [bId]: ctx.teamB.name });
+    el('tv-game-msg').classList.remove('final');
+    el('tv-game-msg').textContent = 'Active players — tap to time it blind!';
+  } else if (g.status === 'over') {
+    const contenders = [aId, bId].map((id) => ({ ...g.players[id], playerId: id, team: id === aId ? ctx.teamA.name : ctx.teamB.name, targetMs: g.targetMs }));
+    renderReveal(contenders, g.winner?.playerId);
+    el('tv-game-msg').classList.remove('final');
+    el('tv-game-msg').textContent = 'Host taps Next Round to lock the ledger dot in.';
+  }
 }
 
-/* ---------------- rendering ---------------- */
+/* ---------------- rendering (PvE round + PvP duel) ---------------- */
 function renderRound(g) {
-  el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
-  const rows = el('tv-round-rows');
-  rows.innerHTML = '';
-  const order = g.status === 'over' && g.ranking ? g.ranking.concat(Object.keys(g.players).filter((id) => !g.ranking.includes(id))) : Object.keys(g.players);
-  order.forEach((id) => {
-    const s = g.players[id];
-    const li = document.createElement('li');
-    li.className = `round-row ${s.state}`;
-    const time = s.state === 'stopped' ? `${fmtS2(s.elapsedMs)}s <span class="deviation">Δ ${fmtSigned(s.elapsedMs - g.targetMs)}s</span>` : s.state === 'dnf' ? 'DNF' : s.state === 'running' ? '⏱…' : '—';
-    const medal = g.status === 'over' && g.ranking?.[0] === id ? '🏆 ' : '';
-    li.innerHTML = `<span class="row-name">${medal}${s.name}</span><span class="row-time">${time}</span>`;
-    rows.appendChild(li);
-  });
-  const msg = el('tv-game-msg');
-  msg.classList.toggle('final', g.status === 'over');
-  msg.textContent = g.status === 'running' ? 'Tap to start your timer, tap again to stop — land on the target!'
-    : g.status === 'over' ? (g.winner ? `🏆 ${g.winner.name} takes the round!` : 'No winner — host taps Next Round.') : '';
+  const ids = Object.keys(g.players);
+  const duel = ids.length === 2;
+  if (g.status === 'running') {
+    showScreen('active');
+    el('tv-target-label').hidden = false;
+    el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
+    el('tv-turn').hidden = true;
+    fillRows(g);
+    el('tv-game-msg').classList.remove('final');
+    el('tv-game-msg').textContent = 'Tap to start your timer, tap again to stop — land on the target!';
+  } else if (g.status === 'over' && duel) {
+    // PvP head-to-head reveal.
+    const contenders = ids.map((id) => ({ ...g.players[id], playerId: id, team: '', targetMs: g.targetMs }));
+    renderReveal(contenders, g.winner?.playerId);
+    el('tv-game-msg').classList.remove('final');
+    el('tv-game-msg').textContent = 'Host taps Next Round to continue the game.';
+  } else if (g.status === 'over') {
+    // PvE ranking (N players): keep the ranked rows.
+    showScreen('active');
+    el('tv-target-label').hidden = false;
+    el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
+    el('tv-turn').hidden = true;
+    fillRows(g);
+    const msg = el('tv-game-msg'); msg.classList.add('final');
+    msg.textContent = g.winner ? `🏆 ${g.winner.name} takes the round!` : 'No winner — host taps Next Round.';
+  }
 }
 
 function renderKoth(m, pvp = false) {
-  if (!pvp) el('tv-match-banner').textContent = m.status === 'king' ? '👑 WE HAVE A KING 👑' : `King of the Hill — first to ${m.n} (round ${m.roundNum})${m.hard ? ' 🔥' : ''}`;
-  if (pvp) { renderBracket(); return; } // PvP shows the bracket in standings; skip KOTH standings
+  if (pvp) return; // PvP uses onPvpGame + the bracket
+  el('tv-bracket').hidden = true; el('tv-standings').hidden = false;
+  el('tv-match-banner').textContent = m.status === 'king' ? '👑 WE HAVE A KING 👑' : `King of the Hill — first to ${m.n} (round ${m.roundNum})${m.hard ? ' 🔥' : ''}`;
   const st = el('tv-standings');
   st.innerHTML = '';
   (m.tally || []).forEach((t) => { const li = document.createElement('li'); li.className = 'standing alive'; li.textContent = `${t.name} — ${t.wins}/${m.n}${'👑'.repeat(t.wins)}`; st.appendChild(li); });
@@ -316,6 +397,7 @@ function renderKoth(m, pvp = false) {
 }
 
 function renderElim(m) {
+  el('tv-bracket').hidden = true; el('tv-standings').hidden = false;
   el('tv-match-banner').textContent = m.status === 'champion' ? '👑 CHAMPION 👑' : `Last Man Standing — round ${m.roundNum}`;
   const st = el('tv-standings');
   st.innerHTML = '';
@@ -324,32 +406,41 @@ function renderElim(m) {
   if (m.status === 'champion') { el('tv-game-msg').classList.add('final'); el('tv-game-msg').textContent = `👑 ${m.champion.name} is the last one standing!`; }
 }
 
+// TR-52 State 6: the tournament bracket tree (columns per round + a champion
+// column). Each slot shows the entrant and its GAME-win count in parentheses.
 function renderBracket() {
-  const st = el('tv-standings');
-  st.innerHTML = '';
+  showScreen('bracket');
+  const host = el('tv-bracket'); host.innerHTML = '';
   bracket.rounds.forEach((round, ri) => {
-    const hdr = document.createElement('li');
-    hdr.className = 'standing';
-    hdr.textContent = `— ${roundLabel(bracket, ri)} —`;
-    st.appendChild(hdr);
+    const col = document.createElement('div'); col.className = 'bkt-col';
+    const h = document.createElement('div'); h.className = 'bkt-col-head'; h.textContent = roundLabel(bracket, ri);
+    col.appendChild(h);
     round.forEach((mm) => {
-      const li = document.createElement('li');
-      li.className = 'standing ' + (mm.winner ? 'out' : 'alive');
-      const a = mm.a ? mm.a.name : '(bye)';
-      const b = mm.b ? mm.b.name : (mm.bye ? '(bye)' : '…');
-      const mark = mm === curMatch && !mm.winner ? '▶ ' : '';
-      const games = (mm.a && mm.b) ? `  (${mm.gamesA}–${mm.gamesB})` : '';
-      const win = mm.winner ? `  ✓ ${mm.winner.name}` : '';
-      li.textContent = `${mark}${a} vs ${b}${games}${win}`;
-      st.appendChild(li);
+      const box = document.createElement('div');
+      box.className = 'bkt-match' + (mm === curMatch && !mm.winner ? ' current' : '');
+      const slot = (ent, games, isWinner) => {
+        const s = document.createElement('div'); s.className = 'bkt-slot' + (isWinner ? ' winner' : '');
+        const name = ent ? ent.name : (mm.bye ? '(bye)' : 'TBD');
+        s.innerHTML = `<span class="who">${name}</span><span class="games">(${games})</span>`;
+        return s;
+      };
+      box.appendChild(slot(mm.a, mm.gamesA, !!(mm.winner && mm.a && mm.winner.id === mm.a.id)));
+      box.appendChild(slot(mm.b, mm.gamesB, !!(mm.winner && mm.b && mm.winner.id === mm.b.id)));
+      col.appendChild(box);
     });
+    host.appendChild(col);
   });
+  const champCol = document.createElement('div'); champCol.className = 'bkt-col';
+  const ch = document.createElement('div'); ch.className = 'bkt-col-head'; ch.textContent = 'Champion'; champCol.appendChild(ch);
+  const cbox = document.createElement('div'); cbox.className = 'bkt-champ';
+  cbox.innerHTML = `<div class="lbl">🏆</div><div class="who">${bracket.champion ? bracket.champion.name : 'TBD'}</div>`;
+  champCol.appendChild(cbox); host.appendChild(champCol);
 }
 
 function renderChampion(c) {
+  renderBracket();
   el('tv-match-banner').textContent = '🏆 TOURNAMENT CHAMPION 🏆';
-  el('tv-target').innerHTML = '';
-  el('tv-round-rows').innerHTML = '';
+  el('tv-rotation').textContent = '';
   el('tv-game-msg').classList.add('final');
   el('tv-game-msg').textContent = `🏆 ${c.name} wins the bracket!`;
 }
