@@ -12,6 +12,7 @@ import { validatePool, validateCategory, ENVIRONMENTS, KOTH_THRESHOLDS } from '.
 import { createKoth } from './koth.js';
 import { createMatch as createElim } from './elimination.js';
 import { createBracket, reportGameWin, activeMatches, isComplete, roundLabel } from './bracket.js';
+import { createTeamGame, distributeTeams } from './teamgame.js';
 import { fmtOff, fmtS2 } from './format.js';
 
 const el = (id) => document.getElementById(id);
@@ -24,11 +25,12 @@ let players = [];
 let hostId = null;
 let inGame = false;    // true once a game/tournament starts (gates the menu)
 let engine = null;     // active round-composing engine (koth/elim/per-match koth)
-let bracket = null;    // PvP tournament
+let bracket = null;    // PvP/Teams tournament
 let curMatch = null;
+let isTeams = false;
 
 /* ---------------- Phase 1: highlight menu ---------------- */
-const config = { pool: { classic: true, hard: false, guess: false }, category: null, pveMode: 'koth', kothN: 5 };
+const config = { pool: { classic: true, hard: false, guess: false }, category: null, pveMode: 'koth', kothN: 5, numTeams: 2 };
 let stack = ['main'];
 let focus = 0;
 const pop = () => { if (stack.length > 1) { stack.pop(); focus = 0; } };
@@ -50,12 +52,16 @@ const screens = {
   category: () => [
     { label: `PvE Arcade ▸${config.category === 'pve' ? '  ✓' : ''}`, onSelect: () => (config.category = 'pve'), enter: 'pve' },
     { label: `PvP Tournament${config.category === 'pvp' ? '  ✓' : ''}`, onSelect: () => (config.category = 'pvp') },
-    { label: `Teams Tournament${config.category === 'teams' ? '  ✓' : ''}`, onSelect: () => (config.category = 'teams') },
+    { label: `Teams Tournament ▸${config.category === 'teams' ? '  ✓' : ''}`, onSelect: () => (config.category = 'teams'), enter: 'teams' },
     { label: '◂ Back', onSelect: pop }
   ],
   pve: () => [
     { label: `Mode:  ${config.pveMode === 'koth' ? 'King of the Hill' : 'Last Man Standing'}   ◀ ▶`, onLeft: togglePve, onRight: togglePve },
     { label: `KOTH:  First to ${config.kothN}   ◀ ▶`, onLeft: () => cycleKoth(-1), onRight: () => cycleKoth(1) },
+    { label: '◂ Back', onSelect: pop }
+  ],
+  teams: () => [
+    { label: `# Teams:  ${config.numTeams}   ◀ ▶`, onLeft: () => (config.numTeams = Math.max(2, config.numTeams - 1)), onRight: () => (config.numTeams = Math.min(Math.max(2, activePlayers().length), config.numTeams + 1)) },
     { label: '◂ Back', onSelect: pop }
   ]
 };
@@ -97,7 +103,7 @@ function startGame() {
   if (!cv.ok) return menuMsg(cv.reason);
   if (config.category === 'pve') return launchPve();
   if (config.category === 'pvp') return launchPvp();
-  menuMsg('✅ Teams is ready — its launch is the next slice (uses bracket.js + teammatch.js).');
+  if (config.category === 'teams') return launchTeams();
 }
 
 function showGame(on) {
@@ -136,12 +142,12 @@ function nextBracketMatch() {
   if (isComplete(bracket)) { renderBracket(); renderChampion(bracket.champion); return; }
   curMatch = activeMatches(bracket)[0];
   renderBracket();
-  el('tv-match-banner').textContent = 'PvP Tournament';
+  el('tv-match-banner').textContent = isTeams ? 'Teams Tournament' : 'PvP Tournament';
   el('tv-target').innerHTML = '';
   el('tv-round-rows').innerHTML = '';
   el('tv-game-msg').classList.remove('final');
   el('tv-game-msg').textContent = `Next up: ${curMatch.a.name} vs ${curMatch.b.name} — get ready!`;
-  setTimeout(startBracketGame, 2600);
+  setTimeout(isTeams ? startTeamMatch : startBracketGame, 2600);
 }
 
 function startBracketGame() {
@@ -158,6 +164,46 @@ function onPvpGame(m) {
     renderBracket();
     setTimeout(nextBracketMatch, 2600);
   }
+}
+
+/* ---- Teams tournament ---- */
+function launchTeams() {
+  const roster = activePlayers().map((p) => ({ playerId: p.playerId, name: p.name }));
+  const teams = distributeTeams(roster, config.numTeams);
+  if (teams.length < 2) return menuMsg('Need at least 2 teams (min 3 players).');
+  isTeams = true;
+  bracket = createBracket(teams.map((t) => ({ id: t.id, name: t.name, members: t.members })), { gamesToWin: 1 });
+  showGame(true);
+  logTransition('tv', 'setup', 'teams-launch', `${teams.length} teams`);
+  nextBracketMatch();
+}
+
+function startTeamMatch() {
+  const teamA = curMatch.a, teamB = curMatch.b; // entrants carry {id,name,members}
+  engine = createTeamGame({
+    db, room: lobbyId, teamA, teamB, n: 3, hard: !!config.pool.hard,
+    onTv: { state: (g, ctx) => renderTeamRound(g, ctx) },
+    onGame: (r) => { if (r.status === 'over') { reportGameWin(bracket, curMatch.id, r.winner.id); engine = null; renderBracket(); setTimeout(nextBracketMatch, 2600); } }
+  });
+  engine.nextRound();
+}
+
+function renderTeamRound(g, ctx) {
+  el('tv-match-banner').textContent = `${ctx.teamA.name}  ${ctx.winsA} — ${ctx.winsB}  ${ctx.teamB.name}   (first to ${ctx.n})`;
+  el('tv-target').innerHTML = `${fmt(g.targetMs)}<span class="timer-unit">s</span>`;
+  const label = { [ctx.activeA.playerId]: ctx.teamA.name, [ctx.activeB.playerId]: ctx.teamB.name };
+  const rows = el('tv-round-rows'); rows.innerHTML = '';
+  Object.keys(g.players).forEach((id) => {
+    const s = g.players[id];
+    const li = document.createElement('li'); li.className = `round-row ${s.state}`;
+    const time = s.state === 'stopped' ? `${fmtS2(s.elapsedMs)}s <span class="deviation">Δ ${fmtOff(s.deviationMs)}s</span>` : s.state === 'dnf' ? 'DNF' : s.state === 'running' ? '⏱…' : '—';
+    const medal = g.status === 'over' && g.ranking?.[0] === id ? '🏆 ' : '';
+    li.innerHTML = `<span class="row-name">${medal}${label[id] || ''}: ${s.name}</span><span class="row-time">${time}</span>`;
+    rows.appendChild(li);
+  });
+  const msg = el('tv-game-msg'); msg.classList.toggle('final', g.status === 'over');
+  msg.textContent = g.status === 'running' ? 'Active players — tap to time it blind!' : g.status === 'over' ? (g.winner ? `Round to ${label[g.winner.playerId] || g.winner.name}!` : 'No winner — host taps Next Round.') : '';
+  renderBracket();
 }
 
 /* ---------------- rendering ---------------- */
