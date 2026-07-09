@@ -367,7 +367,7 @@ async function startLobby() {
         return;
       }
       if (ev.type === 'start-koth' && isCaptain && !match && (!round || round.isOver())) {
-        const n = [3, 5, 7].includes(ev.n) ? ev.n : 3;
+        const n = [5, 7, 10].includes(ev.n) ? ev.n : 5;
         startKoth(n, `start-koth event ${ev.eventId} from captain (n=${n})`, ev.hard === true);
         return;
       }

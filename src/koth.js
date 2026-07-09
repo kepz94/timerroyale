@@ -3,6 +3,11 @@
 // first player to N wins is crowned King. All-DNF rounds award nothing.
 import { ref, set, serverTimestamp } from 'firebase/database';
 import { createRound, randomTarget } from './round.js';
+
+// Hard KOTH uses a fast, reactive band (0.5-3.5s) to balance exact-hit difficulty.
+function kothTarget(hard) {
+  return hard ? Math.round((500 + Math.random() * 3000) / 100) * 100 : randomTarget();
+}
 import { logTransition } from './session.js';
 
 export function createKoth({ db, room, players, n, hard = false, onTv, onMatch }) {
@@ -61,7 +66,7 @@ export function createKoth({ db, room, players, n, hard = false, onTv, onMatch }
     onMatch?.(matchState(), null);
     currentRound = createRound({
       db, room, players, hard,
-      targetMs: randomTarget(),
+      targetMs: kothTarget(hard),
       onTv: {
         state: (g) => {
           onTv?.state(g);
