@@ -131,6 +131,9 @@
         background: #12321c; color: #4ade80; border: 2px solid #22c55e; border-radius: .6rem;
         font-size: clamp(.9rem, 1.6vw, 1.4rem); padding: .5rem 1rem; cursor: pointer; opacity: .8; }
       #tv-reconnect:hover { opacity: 1; }
+      #tv-sound { position: fixed; top: 1rem; left: 1rem; z-index: 60;
+        background: #12321c; color: #f0b429; border: 2px solid #f0b429; border-radius: .6rem;
+        font-size: clamp(.9rem, 1.6vw, 1.4rem); padding: .5rem 1rem; cursor: pointer; }
 
       /* Per-round mode-hint splash (TR-52: "Get close!" / "Hit EXACTLY!") */
       .tv-splash { position: fixed; inset: 0; z-index: 55; display: grid; place-items: center;
@@ -151,6 +154,7 @@
   </head>
   <body class="host">
     <button id="tv-reconnect" type="button" title="Reload if the screen freezes">⟳ Reconnect</button>
+    <button id="tv-sound" type="button" title="Tap once to enable game sounds">🔊 Enable sound</button>
     <div id="tv-flash"></div>
     <div id="tv-splash" class="tv-splash" hidden>
       <div class="splash-inner">
