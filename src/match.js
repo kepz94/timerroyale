@@ -157,10 +157,16 @@ async function allocateMatchId(db, attempts = 5) {
  * score is known). Writes matches/{id} = pending and the host's own match index.
  * Returns { matchId, targets, mode, hard, link, expiresAt }.
  */
-export async function createMatch(db, { mode = 'classic', hard = false, host }) {
+export async function createMatch(db, opts) {
+  const matchId = await allocateMatchId(db);
+  return createMatchWithId(db, matchId, opts);
+}
+
+/** Like createMatch but with a caller-supplied id: the host pre-seeds targets
+ *  from generateMatchId(), plays them, then persists with the known score. */
+export async function createMatchWithId(db, matchId, { mode = 'classic', hard = false, host }) {
   if (!MATCH_MODES[mode]) throw new Error(`unknown mode: ${mode}`);
   if (!host?.uid || host.score == null) throw new Error('host uid + score required');
-  const matchId = await allocateMatchId(db);
   const targets = seededTargets(mode, matchId);
   const expiresAt = Date.now() + MATCH_EXPIRY_MS;
   await set(ref(db, `matches/${matchId}`), {

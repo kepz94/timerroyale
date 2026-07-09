@@ -5,6 +5,8 @@ import { BANNERS, ACHIEVEMENTS, tierBannerFor } from './cosmetics.js';
 import { ref as dbRef2, update as dbUpdate } from 'firebase/database';
 import { DAILY_ROUNDS, dateKey, dailyTargets, todayResult, saveResult, msToMidnight, ratingColor } from './daily.js';
 import { createGuessSoloGame, GUESS_SOLO_ROUNDS } from './guesssolo.js';
+import { validatePool, resolveMode, ENVIRONMENTS } from './hostconfig.js';
+import { generateMatchId, seededTargets, createMatchWithId } from './match.js';
 import { sfxStart, sfxStop } from './sfx.js';
 import { registerSW } from 'virtual:pwa-register';
 registerSW({ immediate: true });
@@ -186,7 +188,7 @@ function appendResult(attempt, roundNum) {
   el('solo-results').appendChild(li);
 }
 
-function startGame() {
+function startGame(opts) {
   mode = 'solo';
   el('solo-guess-form').hidden = true;
   clearInterval(countdownTimer);
@@ -195,7 +197,7 @@ function startGame() {
   el('final-score').hidden = true;
   el('daily-countdown').hidden = true;
   el('daily-share').hidden = true;
-  game = createSoloGame();
+  game = createSoloGame(opts && opts.targets ? { targets: opts.targets } : undefined);
   shownTotal = 0;
   renderScore(0);
   document.querySelector('.score-wrap').hidden = false;
@@ -211,6 +213,7 @@ function startGame() {
 }
 
 function finishGame(totalMs) {
+  if (hostCtx) { finishHostChallenge(totalMs); return; }
   el('solo-round').textContent = 'Done!';
   document.querySelector('.target-row').hidden = true;
   document.querySelector('.score-wrap').hidden = true;
@@ -392,14 +395,14 @@ function renderGuessRoundStart() {
   el('solo-msg').textContent = 'Tap, then feel the gap between the beeps.';
 }
 
-function startGuessSolo() {
+function startGuessSolo(opts) {
   mode = 'guess-solo';
   clearInterval(countdownTimer);
   el('join-code-form').hidden = true;
   el('final-score').hidden = true;
   el('daily-countdown').hidden = true;
   el('daily-share').hidden = true;
-  guessGame = createGuessSoloGame({ onMoment: fireMomentSolo });
+  guessGame = createGuessSoloGame({ onMoment: fireMomentSolo, targets: opts && opts.targets ? opts.targets : undefined });
   el('menu').hidden = true;
   el('solo-panel').hidden = false;
   document.querySelector('.target-row').hidden = true;
@@ -413,6 +416,7 @@ function startGuessSolo() {
 
 function finishGuessSolo() {
   const totalMs = guessGame.totalMs();
+  if (hostCtx) { finishHostChallenge(totalMs); return; }
   el('solo-round').textContent = 'Done!';
   const hero = el('final-score');
   hero.hidden = false;
@@ -520,3 +524,69 @@ el('solo-big').addEventListener('pointerdown', (e) => {
     });
   }
 });
+
+
+/* ---- Host branching: Screen-1 environment select + 1v1 invite (TR-46 / TR-34) ---- */
+let hostCtx = null;
+
+el('host-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  el('menu').hidden = true;
+  el('host-choice').hidden = false;
+});
+el('host-choice-back').addEventListener('click', () => {
+  el('host-choice').hidden = true;
+  el('menu').hidden = false;
+});
+el('host-party-btn').addEventListener('click', () => { location.href = '/host.html'; });
+el('host-1v1-btn').addEventListener('click', () => {
+  el('host-choice').hidden = true;
+  el('host-1v1-panel').hidden = false;
+  el('host-1v1-msg').textContent = currentUser ? '' : 'Tip: sign in (top of screen) so this match counts toward your record.';
+});
+el('host-1v1-back').addEventListener('click', () => {
+  el('host-1v1-panel').hidden = true;
+  el('menu').hidden = false;
+});
+el('host-1v1-play').addEventListener('click', () => {
+  const pool = [];
+  if (el('pool-classic').checked) pool.push('classic');
+  if (el('pool-guess').checked) pool.push('guess');
+  const check = validatePool(ENVIRONMENTS.ONEVONE, pool);
+  if (!check.ok) { el('host-1v1-msg').textContent = check.reason; return; }
+  if (!currentUser) { el('host-1v1-msg').textContent = 'Sign in (top of screen) to create a ranked 1v1.'; return; }
+  el('host-1v1-msg').textContent = '';
+  const chosen = resolveMode(check.pool);
+  hostCtx = { id: generateMatchId(), mode: chosen };
+  const targets = seededTargets(chosen, hostCtx.id);
+  el('host-1v1-panel').hidden = true;
+  if (chosen === 'classic') startGame({ targets });
+  else startGuessSolo({ targets });
+});
+
+async function finishHostChallenge(totalMs) {
+  const ctx = hostCtx;
+  hostCtx = null;
+  el('solo-round').textContent = `1v1 ${ctx.mode} — your half is in`;
+  el('final-score').hidden = false;
+  el('final-score').innerHTML = `${fmtOff(totalMs)}<span class="timer-unit">s off</span>`;
+  el('solo-big').hidden = true;
+  el('solo-guess-form').hidden = true;
+  el('solo-again').hidden = true;
+  el('solo-exit').hidden = false;
+  el('solo-total').hidden = true;
+  el('solo-msg').textContent = 'Generating your invite link…';
+  try {
+    const profile = await getProfile(db, currentUser.uid);
+    const res = await createMatchWithId(db, ctx.id, {
+      mode: ctx.mode, hard: false,
+      host: { uid: currentUser.uid, name: profile?.displayName ?? 'Host', score: totalMs }
+    });
+    el('solo-total').hidden = false;
+    el('solo-total').textContent = res.link;
+    el('solo-msg').textContent = 'Send this link to your challenger (valid 48h):';
+    try { await navigator.clipboard.writeText(res.link); el('solo-msg').textContent = 'Link copied — send it to your challenger (48h):'; } catch { /* clipboard may be blocked pre-gesture */ }
+  } catch (err) {
+    el('solo-msg').textContent = 'Could not create the match — online 1v1 needs Google sign-in + server rules enabled.';
+  }
+}
