@@ -42,7 +42,9 @@ let tourney = null;    // TR-52 tournament scheduler (PvP/Teams)
 let bracket = null;    // tourney.bracket (kept for the TV bracket render)
 let curMatch = null;
 let isTeams = false;
+let awaitingNextGame = false; // between-games: wait for the host to tap Next
 let draftState = null;
+let clockTimer = null;         // live TV clock loop (team tournaments)
 let pickDeadline = 0;
 let draftClock = null;
 
@@ -133,6 +135,7 @@ function renderHard(g, teamCtx) {
   };
   el('tv-match-banner').textContent = `HARD CLASSIC — TARGET ${target1}s`;
   if (g.status === 'over') {
+    stopClockLoop(); if (el('hard-clock')) el('hard-clock').hidden = true;
     const w = g.winner;
     const wAtt = w ? (g.attempts[w.playerId] || []) : [];
     const cleanHit = wAtt.some((a) => a.hit);
@@ -159,6 +162,13 @@ function renderHard(g, teamCtx) {
       li.innerHTML = `<span class="row-name">${a.hit ? '🎯' : '❌'} Attempt ${i + 1}</span><span class="row-time">${fmtS2(a.elapsedMs)}s ${a.hit ? '(HIT!)' : (a.early ? '(Too Early)' : '(Too Late)')}</span>`;
       hist.appendChild(li);
     });
+    // Live spectator clock for the current attempt (Team tournaments only).
+    const aState = g.players?.[aid]?.state, aStart = g.players?.[aid]?.startHostTs;
+    const hc = el('hard-clock');
+    if (hc) {
+      if (teamCtx && aState === 'running' && aStart) { hc.hidden = false; hc.setAttribute('data-clock-start', aStart); hc.textContent = '0.00s'; startClockLoop(); }
+      else { hc.hidden = true; hc.removeAttribute('data-clock-start'); stopClockLoop(); }
+    }
     el('hard-winner').textContent = '';
     el('hard-representing').textContent = teamCtx
       ? `Representing: ${teamNameFor(aid)}   ·   Up next: ${aid === teamCtx.activeA.playerId ? teamCtx.teamB.name : teamCtx.teamA.name}`
@@ -172,6 +182,19 @@ function showLedger(aName, aWon, bName, bWon) {
   l.innerHTML =
     `<div class="team"><span class="name">${aName}</span><span class="dot-strip">${dots(aWon, '🔵', '⚪')}</span></div>` +
     `<div class="team"><span class="name">${bName}</span><span class="dot-strip">${dots(bWon, '🔴', '⚪')}</span></div>`;
+}
+
+// Live TV clocks (Team tournaments): tick any element carrying data-clock-start
+// (= the player's host-time start). Active reps face away; the room watches.
+function stopClockLoop() { if (clockTimer) { clearInterval(clockTimer); clockTimer = null; } }
+function startClockLoop() {
+  stopClockLoop();
+  clockTimer = setInterval(() => {
+    document.querySelectorAll('[data-clock-start]').forEach((elm) => {
+      const st = Number(elm.getAttribute('data-clock-start'));
+      if (st > 0) elm.textContent = `${((Date.now() - st) / 1000).toFixed(2)}s`;
+    });
+  }, 60);
 }
 
 // Live status rows for the active screen (also used for PvE ranking).
@@ -304,8 +327,8 @@ function nextTourneyGame() {
   el('tv-match-banner').textContent = gf ? '🏆 GRAND FINALS — BEST OF 5' : 'TOURNAMENT BRACKET — BEST OF 5';
   el('tv-rotation').textContent = `Next up: ${curMatch.a.name} vs ${curMatch.b.name} — first to ${ROUNDS_TO_WIN_GAME} takes the game`;
   el('tv-game-msg').classList.remove('final');
-  el('tv-game-msg').textContent = 'Get ready — the next game is starting…';
-  setTimeout(isTeams ? startTeamMatch : startBracketGame, 2600);
+  el('tv-game-msg').textContent = 'Host — tap Next on your phone to start this game.';
+  awaitingNextGame = true; // host paces the jump into the next game
 }
 
 function startBracketGame() {
@@ -413,12 +436,28 @@ function renderTeamRound(g, ctx) {
     showScreen('active');
     el('tv-target-label').hidden = false;
     el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
-    el('tv-turn').hidden = false;
-    el('tv-turn').textContent = `${ctx.teamA.name}: ${ctx.activeA.name}   vs   ${ctx.teamB.name}: ${ctx.activeB.name}`;
-    fillRows(g, { [aId]: ctx.teamA.name, [bId]: ctx.teamB.name });
+    el('tv-turn').hidden = true;
+    el('tv-round-rows').innerHTML = '';
+    // Live spectator clocks — Team tournaments only: the active reps face away
+    // from the TV, so the room watches their clocks tick up in real time.
+    const clk = el('tv-clocks'); clk.hidden = false;
+    clk.innerHTML = [aId, bId].map((id) => {
+      const s = g.players[id];
+      const team = id === aId ? ctx.teamA.name : ctx.teamB.name;
+      const player = id === aId ? ctx.activeA.name : ctx.activeB.name;
+      let cls = '', time;
+      if (s.state === 'running' && s.startHostTs) { cls = 'running'; time = `<span class="lc-time" data-clock-start="${s.startHostTs}">0.00s</span>`; }
+      else if (s.state === 'stopped') { cls = 'stopped'; time = `<span class="lc-time">${fmtS2(s.elapsedMs)}s</span>`; }
+      else if (s.state === 'dnf') { cls = 'dnf'; time = '<span class="lc-time">DNF</span>'; }
+      else { time = '<span class="lc-time">—</span>'; }
+      return `<div class="live-clock ${cls}"><div class="lc-team">${team}</div><div class="lc-name">${player}</div>${time}</div>`;
+    }).join('');
+    startClockLoop();
     el('tv-game-msg').classList.remove('final');
-    el('tv-game-msg').textContent = 'Active players — tap to time it blind!';
+    el('tv-game-msg').textContent = 'Active players are timing blind — the room can see the clocks!';
   } else if (g.status === 'over') {
+    stopClockLoop();
+    el('tv-clocks').hidden = true;
     const contenders = [aId, bId].map((id) => ({ ...g.players[id], playerId: id, team: id === aId ? ctx.teamA.name : ctx.teamB.name, targetMs: g.targetMs }));
     renderReveal(contenders, g.winner?.playerId);
     el('tv-game-msg').classList.remove('final');
@@ -429,6 +468,8 @@ function renderTeamRound(g, ctx) {
 /* ---------------- rendering (PvE round + PvP duel) ---------------- */
 function renderRound(g) {
   if (g.mode === 'hard') { renderHard(g, null); return; }
+  if (el('tv-clocks')) el('tv-clocks').hidden = true; // live clocks are Team-only
+  stopClockLoop();
   const ids = Object.keys(g.players);
   const duel = ids.length === 2;
   if (g.status === 'running') {
@@ -543,6 +584,7 @@ async function boot() {
     }
     if (ev.type === 'nav' && !inGame && ev.playerId === hostId && ev.dir) { onNav(ev.dir); return; }
     if (ev.type === 'press' && engine) { engine.handleEvent(ev); return; }
+    if (ev.type === 'next' && !engine && awaitingNextGame && ev.playerId === hostId) { awaitingNextGame = false; if (isTeams) startTeamMatch(); else startBracketGame(); return; }
     if (ev.type === 'next' && engine && ev.playerId === hostId && engine.isBetween()) { engine.nextRound(); return; }
   });
   // Resume a tournament in progress if the TV reloaded mid-game (reconnect).

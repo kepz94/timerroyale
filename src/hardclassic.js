@@ -22,6 +22,7 @@ export function createHardRound({ db, room, repA, repB, targetMs, onTv, onResult
   let activeId = repA.playerId;
   let phase = 'waiting'; // waiting | running (of the active rep's current attempt)
   let startTs = null;
+  let startHostTs = null; // host-clock baseline for the live TV clock
   let status = 'running'; // running | over
   let winnerId = null;
 
@@ -30,7 +31,7 @@ export function createHardRound({ db, room, repA, repB, targetMs, onTv, onResult
     // phone shows "watching / you're up soon". On over, both are listed.
     const players = {};
     if (status === 'running') {
-      players[activeId] = { playerId: activeId, name: nameById[activeId], state: phase };
+      players[activeId] = { playerId: activeId, name: nameById[activeId], state: phase, startHostTs: phase === 'running' ? startHostTs : null };
     } else {
       for (const id of ids) players[id] = { playerId: id, name: nameById[id], state: id === winnerId ? 'stopped' : 'dnf' };
     }
@@ -69,7 +70,7 @@ export function createHardRound({ db, room, repA, repB, targetMs, onTv, onResult
   function handleEvent(ev) {
     if (status !== 'running' || ev.type !== 'press' || ev.playerId !== activeId) return;
     if (phase === 'waiting') {
-      phase = 'running'; startTs = ev.clientTs; emit();
+      phase = 'running'; startTs = ev.clientTs; startHostTs = Date.now(); emit();
       logTransition('hard', 'waiting', 'running', `${nameById[activeId]} attempt ${attempts[activeId].length + 1} started`);
     } else if (phase === 'running') {
       const elapsedMs = ev.clientTs - startTs;
