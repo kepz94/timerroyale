@@ -20,8 +20,9 @@ import { logTransition } from './session.js';
 // KOTH behavior exactly.
 // hardLoop (TR-52 §5, optional, default OFF): for a 2-player match, each round
 // runs the Hard Classic 13-attempt retry loop instead of a simultaneous round.
-export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, deadHeatVoid = false, deadlineMs, hardLoop = false, guessLoop = false, roundKindFn, onMoment, targetFn, perPlayerStopMs, matchExtra }) {
-  const wins = new Map(players.map((p) => [p.playerId, { playerId: p.playerId, name: p.name, wins: 0 }]));
+export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, deadHeatVoid = false, deadlineMs, hardLoop = false, guessLoop = false, roundKindFn, onMoment, targetFn, perPlayerStopMs, matchExtra, initialWins }) {
+  // initialWins (resume): seed each player's game score from a persisted tally.
+  const wins = new Map(players.map((p) => [p.playerId, { playerId: p.playerId, name: p.name, wins: (initialWins && initialWins[p.playerId]) || 0 }]));
   let roundNum = 0;
   let status = 'between'; // between | round | king
   let currentRound = null;

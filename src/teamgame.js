@@ -29,8 +29,9 @@ export function activeMember(team, roundNum) {
 // hardLoop (TR-52 §5, optional, default OFF): when set, each round runs the Hard
 // Classic 13-attempt retry loop (createHardRound) instead of a simultaneous
 // target round. Classic behavior is untouched when off.
-export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, onTv, onGame, deadHeatVoid = false, deadlineMs, hardLoop = false, guessLoop = false, roundKindFn, onMoment, targetFn, perPlayerStopMs }) {
-  let winsA = 0, winsB = 0, roundNum = 0, status = 'between';
+export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, onTv, onGame, deadHeatVoid = false, deadlineMs, hardLoop = false, guessLoop = false, roundKindFn, onMoment, targetFn, perPlayerStopMs, initialWinsA = 0, initialWinsB = 0, initialRoundNum = 0 }) {
+  // initial* (resume): seed the in-progress game's score + round counter.
+  let winsA = initialWinsA, winsB = initialWinsB, roundNum = initialRoundNum, status = 'between';
   let currentRound = null, activeA = null, activeB = null;
 
   const ctx = () => ({ teamA, teamB, winsA, winsB, activeA, activeB, n });

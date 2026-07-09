@@ -43,6 +43,8 @@ let bracket = null;    // tourney.bracket (kept for the TV bracket render)
 let curMatch = null;
 let isTeams = false;
 let awaitingNextGame = false; // between-games: wait for the host to tap Next
+let resumeWins = null;         // one-shot: seed a resumed PvP game's score
+let resumeTeam = null;         // one-shot: seed a resumed Team game's score
 let draftState = null;
 let clockTimer = null;         // live TV clock loop (team tournaments)
 let currentScreen = null;      // for the per-round hint splash
@@ -442,6 +444,19 @@ function persistTournament() {
   } catch { /* persistence must never break the live game */ }
 }
 
+// Keep a Team game's live score in the match node so a mid-game reload resumes
+// at the real score (koth already carries its tally). Never throws.
+function persistTeamScore(r) {
+  if (!tourney) return;
+  try {
+    dbSet(dbRef(db, `sessions/${lobbyId}/match`), {
+      type: 'team', status: 'playing', winsA: r.winsA, winsB: r.winsB, roundNum: r.roundNum,
+      teams: true, hard: !!config.pool.hard,
+      snapshot: serializeTournament(tourney.bracket, curMatch),
+    }).catch(() => {});
+  } catch { /* no-op */ }
+}
+
 // Rotate onto the next game per the Match Rotation Loop / Grand Finals lock, and
 // show the bracket-intermission takeover while the room gets ready.
 function nextTourneyGame() {
@@ -470,7 +485,8 @@ function startBracketGame() {
   // into the dead-heat void + 20s hostage cutoff (Hard runs exact-hit as-is).
   const pool = Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
   const matchExtra = { snapshot: serializeTournament(tourney.bracket, curMatch), teams: !!isTeams, hard: !!config.pool.hard };
-  engine = createKoth({ db, room: lobbyId, players: two, n: ROUNDS_TO_WIN_GAME, roundKindFn: () => resolveMode(pool), deadHeatVoid: true, perPlayerStopMs: 30000, targetFn: createClassicTargets(), onMoment: flashCue, matchExtra, onTv: { state: renderRound }, onMatch: onPvpGame });
+  engine = createKoth({ db, room: lobbyId, players: two, n: ROUNDS_TO_WIN_GAME, roundKindFn: () => resolveMode(pool), deadHeatVoid: true, perPlayerStopMs: 30000, targetFn: createClassicTargets(), onMoment: flashCue, matchExtra, initialWins: resumeWins || {}, onTv: { state: renderRound }, onMatch: onPvpGame });
+  resumeWins = null;
   engine.nextRound();
 }
 
@@ -554,12 +570,15 @@ function startTeamMatch() {
     db, room: lobbyId, teamA, teamB, n: ROUNDS_TO_WIN_GAME,
     roundKindFn: () => resolveMode(pool), onMoment: flashCue, deadHeatVoid: true,
     perPlayerStopMs: 30000, targetFn: createClassicTargets(),
+    initialWinsA: resumeTeam?.a || 0, initialWinsB: resumeTeam?.b || 0, initialRoundNum: resumeTeam?.roundNum || 0,
     onTv: { state: (g, ctx) => renderTeamRound(g, ctx) },
     onGame: (r) => {
       if (r.status === 'tie-void') { el('tv-game-msg').classList.remove('final'); el('tv-game-msg').textContent = '🟰 TIE GAME — RESETTING with a new target…'; return; }
+      if (r.status === 'between') persistTeamScore(r); // keep the live score resumable
       if (r.status === 'over') { tourney.reportGame(curMatch.id, r.winner.id); engine = null; setTimeout(nextTourneyGame, 2600); }
     }
   });
+  resumeTeam = null;
   engine.nextRound();
 }
 
@@ -736,8 +755,11 @@ async function boot() {
       isTeams = !!m.teams; config.pool.hard = !!m.hard;
       tourney = restoreTournament(m.snapshot);
       bracket = tourney.bracket;
+      // Seed the in-progress game's score so it resumes at the real score.
+      if (Array.isArray(m.tally)) { resumeWins = {}; m.tally.forEach((t) => { resumeWins[t.playerId] = t.wins; }); }
+      if (m.winsA != null) resumeTeam = { a: m.winsA, b: m.winsB, roundNum: m.roundNum || 0 };
       showGame(true);
-      logTransition('tv', 'boot', 'resumed', 'tournament restored from snapshot');
+      logTransition('tv', 'boot', 'resumed', 'tournament + game score restored');
       nextTourneyGame();
     }
   } catch { /* malformed/absent snapshot -> normal lobby */ }
