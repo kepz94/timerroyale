@@ -551,7 +551,7 @@ let hostCtx = null; // set only while the host plays THEIR half of a claimed mat
 
 el('host-link').addEventListener('click', (e) => { e.preventDefault(); el('menu').hidden = true; el('host-choice').hidden = false; });
 el('host-choice-back').addEventListener('click', () => { el('host-choice').hidden = true; el('menu').hidden = false; });
-el('host-party-btn').addEventListener('click', () => { location.href = '/host.html'; });
+el('host-party-btn').addEventListener('click', () => { location.href = '/tv'; });
 
 el('host-1v1-btn').addEventListener('click', () => {
   el('host-choice').hidden = true;
