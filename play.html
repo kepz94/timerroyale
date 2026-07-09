@@ -32,6 +32,18 @@
       #result-panel .res-row:first-of-type { border-top: none; }
       #result-panel .res-row.me { color: #4ade80; font-weight: 800; }
       #result-panel .res-sub { color: #7e967f; margin-top: .3rem; }
+
+      /* Guess Timer numeric keypad */
+      #guess-panel { margin: 1rem auto 0; max-width: 20rem; }
+      #guess-phone-status { font-size: 1.15rem; color: #f0b429; margin-bottom: .6rem; }
+      .guess-display { font-size: 3rem; font-weight: 800; font-variant-numeric: tabular-nums;
+        background: #121c14; border-radius: 12px; padding: .8rem 1rem; margin-bottom: .8rem; }
+      .guess-display .gd-unit { font-size: 1.4rem; color: #7e967f; }
+      .guess-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+      .guess-keys button { font-size: 1.8rem; padding: .9rem 0; border-radius: 10px;
+        border: 1px solid #22c55e; background: #0d1f14; color: #e9f6ec; touch-action: manipulation; }
+      .guess-keys button:active { background: #12321c; }
+      #guess-submit { margin-top: .8rem; width: 100%; font-size: 1.3rem; }
     </style>
   </head>
   <body class="player">
@@ -56,6 +68,25 @@
         <p id="turn-banner" class="turn-banner"></p>
         <button id="big-press" class="big-btn" type="button" hidden aria-label="Press"><span id="big-press-label">TAP TO START</span></button>
         <div id="result-panel" hidden aria-live="polite"></div>
+        <div id="guess-panel" hidden>
+          <p id="guess-phone-status"></p>
+          <div id="guess-display" class="guess-display">0<span class="gd-unit">s</span></div>
+          <div id="guess-keys" class="guess-keys">
+            <button type="button" data-k="1">1</button>
+            <button type="button" data-k="2">2</button>
+            <button type="button" data-k="3">3</button>
+            <button type="button" data-k="4">4</button>
+            <button type="button" data-k="5">5</button>
+            <button type="button" data-k="6">6</button>
+            <button type="button" data-k="7">7</button>
+            <button type="button" data-k="8">8</button>
+            <button type="button" data-k="9">9</button>
+            <button type="button" data-k=".">.</button>
+            <button type="button" data-k="0">0</button>
+            <button type="button" data-k="back">⌫</button>
+          </div>
+          <button id="guess-submit" class="join-btn" type="button">Lock in 🔒</button>
+        </div>
         <button id="next-round-btn" class="join-btn" type="button" hidden>Next ▶</button>
         <section id="draft-panel" hidden aria-label="Team draft">
           <p id="draft-pool-label" class="players-label" hidden>Your pick — tap a player:</p>
