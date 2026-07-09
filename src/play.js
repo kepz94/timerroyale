@@ -8,6 +8,7 @@ registerSW({ immediate: true });
 import { initFirebase } from './firebase.js';
 import { getSession, restorePlayer, joinRoom, validateName, watchPlayers, setupPresence } from './players.js';
 import { watchAuth, signInGoogle, signOutUser, getProfile } from './auth.js';
+import { sendEvent } from './engine.js';
 
 const el = (id) => document.getElementById(id);
 const db = initFirebase();
@@ -51,6 +52,12 @@ el('auth-btn').addEventListener('click', async () => {
 });
 el('signout-btn').addEventListener('click', signOutUser);
 
+// Host remote: each D-Pad button appends a 'nav' event the TV consumes to move
+// the highlight / activate the focused option (Phase 1 — setup).
+document.querySelectorAll('#dpad [data-dir]').forEach((b) => {
+  b.addEventListener('click', () => { if (me) sendEvent(db, code, me.playerId, 'nav', { dir: b.dataset.dir }); });
+});
+
 el('join-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const check = validateName(el('name-input').value, players.map((p) => p.name));
@@ -77,7 +84,9 @@ function renderRoster() {
   const host = hostPlayer();
   const banner = el('turn-banner');
   if (banner && me) {
-    if (host && host.playerId === me.playerId) banner.textContent = '⭐ You are the HOST — you control the game.';
+    const iAmHost = host && host.playerId === me.playerId;
+    if (el('dpad')) el('dpad').hidden = !iAmHost;
+    if (iAmHost) banner.textContent = '⭐ You are the HOST — use the remote to set up the game on the TV.';
     else if (host) banner.textContent = `Host: ${host.name}. Waiting for the game to start…`;
     else if (currentUser) banner.textContent = "You're signed in — you'll be host unless someone signed in before you.";
     else banner.textContent = 'Waiting for a signed-in host. Sign in with Google to host.';
