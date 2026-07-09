@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TimerRoyale — TV</title>
+    <meta name="theme-color" content="#050807" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body class="host">
+    <main id="app" class="lobby">
+      <h1>TimerRoyale</h1>
+      <p class="subtitle">Scan to grab a controller</p>
+      <section class="join-panel" aria-label="How to join">
+        <div class="qr-card"><canvas id="qr"></canvas></div>
+        <div class="room-info">
+          <p class="room-label">Room code</p>
+          <p id="room-code" class="room-code">····</p>
+          <p id="join-url" class="join-url"></p>
+        </div>
+      </section>
+      <section class="players-panel" aria-label="Players">
+        <p class="players-label">Players (⭐ = signed-in host)</p>
+        <ul id="player-list" class="player-list"></ul>
+        <p id="players-empty" class="players-empty">No one has joined yet</p>
+      </section>
+      <p id="status">Creating room…</p>
+    </main>
+    <script type="module" src="/src/tv.js"></script>
+  </body>
+</html>

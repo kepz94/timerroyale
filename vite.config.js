@@ -10,7 +10,9 @@ export default defineConfig({
         landing: resolve(__dirname, 'index.html'),
         host: resolve(__dirname, 'host.html'),
         player: resolve(__dirname, 'player.html'),
-        match: resolve(__dirname, 'match.html')
+        match: resolve(__dirname, 'match.html'),
+        tv: resolve(__dirname, 'tv.html'),
+        play: resolve(__dirname, 'play.html')
       }
     }
   },

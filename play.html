@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TimerRoyale — Controller</title>
+    <meta name="theme-color" content="#050807" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body class="player">
+    <div id="account-chip" class="account-chip">
+      <button id="auth-btn" class="join-btn auth-btn" type="button" hidden>Sign in with Google</button>
+      <button id="auth-name" class="auth-name" type="button" hidden></button>
+      <button id="signout-btn" class="auth-signout" type="button" hidden>Sign out</button>
+    </div>
+    <main id="app">
+      <h1>TimerRoyale</h1>
+      <p id="room-banner" class="subtitle"></p>
+      <form id="join-form" class="join-form" hidden>
+        <label for="name-input" class="join-label">Your name</label>
+        <input id="name-input" class="name-input" type="text" maxlength="16"
+               autocomplete="off" autocapitalize="words" placeholder="e.g. Kepu" />
+        <button id="join-btn" class="join-btn" type="submit">Join game</button>
+        <p id="join-error" class="join-error" role="alert"></p>
+      </form>
+      <div id="joined-panel" class="joined-panel" hidden>
+        <p id="joined-name" class="joined-name"></p>
+        <p id="turn-banner" class="turn-banner"></p>
+        <p class="players-label">In this lobby</p>
+        <ul id="player-list" class="player-list"></ul>
+      </div>
+      <p id="status">Loading…</p>
+    </main>
+    <script type="module" src="/src/play.js"></script>
+  </body>
+</html>
