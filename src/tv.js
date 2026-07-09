@@ -128,7 +128,6 @@ function showRoundHint(s) {
 
 function showScreen(s) {
   const entering = (s === 'active' || s === 'hard') && currentScreen !== 'active' && currentScreen !== 'hard';
-  const enteringReveal = s === 'reveal' && currentScreen !== 'reveal';
   currentScreen = s;
   el('tv-active').hidden = s !== 'active';
   el('tv-reveal').hidden = s !== 'reveal';
@@ -139,7 +138,6 @@ function showScreen(s) {
   if (s === 'reveal' || s === 'hard' || s === 'bracket' || s === 'guess') el('tv-standings').hidden = true;
   if (s === 'bracket') { el('tv-ledger').hidden = true; el('tv-turn').hidden = true; }
   if (entering) showRoundHint(s);
-  if (enteringReveal) chime();
 }
 
 // TR-52 §5: the Hard Classic retry-loop screen — live attempt history while the
@@ -168,7 +166,7 @@ function renderHard(g, teamCtx) {
     el('hard-zone').textContent = `MATCH ZONE ${fmtS2(zoneLo)}s – ${fmtS2(zoneHi)}s`;
     el('hard-history').innerHTML = '';
     el('hard-winner').textContent = w ? `🏆 ${teamNameFor(w.playerId) || w.name} wins the round! (+1 ledger dot)` : '';
-    if (w && cleanHit) chime();
+    if (w && cleanHit) chime(); else slideWhistle();
     el('hard-representing').textContent = '';
   } else {
     const aid = g.activeId;
@@ -252,6 +250,36 @@ function beep(freq, durMs, vol = 0.22) {
   o.start(t); o.stop(t + durMs / 1000);
 }
 function chime() { beep(660, 120); setTimeout(() => beep(990, 200), 130); }
+
+// Scheduled tone (relative start, for rolls/sweeps).
+function noteAt(freq, startS, durMs, vol = 0.2, type = 'square') {
+  if (!soundOn || !audioCtx) return;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type; o.frequency.value = freq;
+  o.connect(g); g.connect(audioCtx.destination);
+  const t = audioCtx.currentTime + startS;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + durMs / 1000);
+  o.start(t); o.stop(t + durMs / 1000);
+}
+// Cinematic drum-roll then a hit — for the Guess reveal.
+function drumroll() {
+  if (!soundOn || !audioCtx) return;
+  for (let i = 0; i < 14; i++) noteAt(110 + i * 3, i * 0.055, 50, 0.16, 'triangle');
+  setTimeout(chime, 820);
+}
+// Heavy mechanical latch — for a guess "LOCKED IN".
+function latch() { noteAt(190, 0, 35, 0.3, 'square'); noteAt(85, 0.035, 70, 0.28, 'square'); }
+// Descending slide-whistle — for a DNF / shattered-glass moment.
+function slideWhistle() {
+  if (!soundOn || !audioCtx) return;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = 'sine'; o.connect(g); g.connect(audioCtx.destination);
+  const t = audioCtx.currentTime;
+  o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(200, t + 0.5);
+  g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+  o.start(t); o.stop(t + 0.55);
+}
+let lastGuessedCount = 0; // to fire a latch only on a NEW lock-in
 function enableSound() {
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -295,7 +323,8 @@ function renderGuess(g, teamCtx) {
       cards.appendChild(card);
     });
     el('guess-winner').textContent = g.winner ? `🏆 ${labelFor(g.winner.playerId, ids.indexOf(g.winner.playerId))} wins the round! (+1)` : 'No winner';
-    if (g.winner) chime();
+    lastGuessedCount = 0;
+    drumroll(); // cinematic reveal (ends on a chime)
   } else if (g.status === 'guessing') {
     el('guess-head').textContent = '🚨 TIME IS UP — SUBMIT YOUR GUESS!';
     actual.hidden = true;
@@ -308,8 +337,12 @@ function renderGuess(g, teamCtx) {
       card.innerHTML = `<div class="rc-team">${labelFor(id, i)}</div><div class="rc-name">${s.name}</div><div class="rc-time" style="font-size:clamp(2rem,5vw,5rem)">${locked ? 'LOCKED IN 🔒' : 'THINKING…'}</div>`;
       cards.appendChild(card);
     });
+    const guessedNow = ids.filter((id) => g.players[id].state === 'guessed').length;
+    if (guessedNow > lastGuessedCount) latch(); // heavy latch on a new lock-in
+    lastGuessedCount = guessedNow;
     el('guess-winner').textContent = '';
   } else { // ready | get-ready | interval
+    lastGuessedCount = 0;
     el('guess-head').textContent = g.status === 'interval' ? '⏱️ TIMER RUNNING — clock hidden!' : 'GET READY…';
     actual.hidden = true;
     cards.innerHTML = '';
@@ -341,6 +374,8 @@ function renderReveal(contenders, winnerId) {
   banner.textContent = winner
     ? (clutch ? `🏆 CLUTCH WINNER: ${winner.name} (within 0.05s)` : `🏆 ${winner.name} wins the round! (+1)`)
     : 'No winner — host taps Next Round.';
+  if (contenders.some((c) => c.state === 'dnf')) slideWhistle();
+  else if (winner) chime();
 }
 
 /* ---------------- launch ---------------- */
