@@ -93,23 +93,38 @@
       #tv-game .round-row.hit { border-left: 5px solid var(--win); color: var(--win); }
       #tv-game .round-row.dnf { border-left: 5px solid var(--danger); }
 
-      /* Tournament bracket tree */
-      .tv-bracket { display: flex; gap: clamp(1rem, 3vw, 3rem); justify-content: center;
-        align-items: center; flex-wrap: wrap; }
-      .bkt-col { display: flex; flex-direction: column; gap: clamp(.8rem, 2vh, 2rem); justify-content: center; }
-      .bkt-col-head { font-size: clamp(1rem, 2vw, 2.2rem); color: var(--text-dim);
-        text-transform: uppercase; letter-spacing: .15em; text-align: center; }
+      /* Tournament bracket tree — big, to emphasize the games */
+      .tv-bracket { display: flex; gap: clamp(1.5rem, 4.5vw, 5rem); justify-content: center;
+        align-items: center; flex-wrap: wrap; margin: 2vh auto; width: 100%; }
+      .bkt-col { display: flex; flex-direction: column; gap: clamp(1.2rem, 3vh, 3rem); justify-content: center; }
+      .bkt-col-head { font-size: clamp(1.3rem, 2.6vw, 2.8rem); color: var(--text-dim);
+        text-transform: uppercase; letter-spacing: .15em; text-align: center; margin-bottom: .4rem; }
       .bkt-match { background: var(--surface-raised); border-radius: var(--radius);
-        padding: clamp(.6rem, 1.3vh, 1.4rem) clamp(1rem, 1.8vw, 1.8rem);
-        min-width: clamp(11rem, 20vw, 26rem); border-left: 5px solid transparent; }
-      .bkt-match.current { border-left-color: #f0b429; box-shadow: 0 0 20px rgba(240,180,41,.35); }
-      .bkt-slot { display: flex; justify-content: space-between; gap: 1rem;
-        font-size: clamp(1.3rem, 2.4vw, 2.6rem); padding: .2rem 0; }
+        padding: clamp(1rem, 2.2vh, 2.2rem) clamp(1.4rem, 2.6vw, 2.8rem);
+        min-width: clamp(14rem, 27vw, 36rem); border-left: 8px solid transparent; }
+      .bkt-match.current { border-left-color: #f0b429; box-shadow: 0 0 30px rgba(240,180,41,.4); }
+      .bkt-slot { display: flex; justify-content: space-between; gap: 1.2rem;
+        font-size: clamp(1.7rem, 3.4vw, 3.8rem); padding: .35rem 0; }
       .bkt-slot.winner { color: var(--win); font-weight: 800; }
       .bkt-slot .games { font-variant-numeric: tabular-nums; color: var(--text-dim); }
       .bkt-champ { text-align: center; }
-      .bkt-champ .lbl { font-size: clamp(2rem, 4vw, 4rem); }
-      .bkt-champ .who { font-size: clamp(1.6rem, 3vw, 3.2rem); font-weight: 800; color: var(--win); }
+      .bkt-champ .lbl { font-size: clamp(2.6rem, 5vw, 5.5rem); }
+      .bkt-champ .who { font-size: clamp(2rem, 4vw, 4.4rem); font-weight: 800; color: var(--win); }
+
+      /* Live spectator clocks (Team tournaments — active reps face away) */
+      .tv-clocks { display: flex; justify-content: center; gap: clamp(2rem, 6vw, 7rem); flex-wrap: wrap; margin: 1vh 0; }
+      .live-clock { background: var(--surface-raised); border-radius: var(--radius);
+        padding: clamp(1rem, 2.5vh, 2.5rem) clamp(1.6rem, 4vw, 4.5rem);
+        min-width: clamp(12rem, 24vw, 30rem); }
+      .live-clock .lc-team { font-size: clamp(1rem, 2vw, 2.2rem); color: var(--text-dim);
+        text-transform: uppercase; letter-spacing: .14em; }
+      .live-clock .lc-name { font-size: clamp(1.5rem, 3.2vw, 3.2rem); font-weight: 800; margin: .2rem 0 .4rem; }
+      .live-clock .lc-time { font-size: clamp(3.5rem, 10vw, 11rem); font-weight: 800;
+        font-variant-numeric: tabular-nums; line-height: 1; color: var(--accent); }
+      .live-clock.stopped .lc-time { color: var(--text); }
+      .live-clock.dnf .lc-time { color: var(--danger); }
+      #hard-clock { font-size: clamp(3rem, 9vw, 10rem); font-weight: 800;
+        font-variant-numeric: tabular-nums; color: var(--accent); line-height: 1; min-height: 1em; }
 
       /* Reconnect — always reachable if a screen freezes */
       #tv-reconnect { position: fixed; top: 1rem; right: 1rem; z-index: 60;
@@ -157,6 +172,7 @@
           <p id="tv-target-label" class="target-label">Target</p>
           <p id="tv-target" class="timer-digits">0.0<span class="timer-unit">s</span></p>
           <p id="tv-turn" class="tv-turn" hidden></p>
+          <div id="tv-clocks" class="tv-clocks" hidden></div>
           <ul id="tv-round-rows" class="round-rows"></ul>
         </div>
 
@@ -171,6 +187,7 @@
           <p id="hard-head" class="reveal-head"></p>
           <p id="hard-sub" class="reveal-sub"></p>
           <p id="hard-target" class="timer-digits"></p>
+          <p id="hard-clock" hidden></p>
           <p id="hard-zone" class="rc-dev"></p>
           <ul id="hard-history" class="round-rows"></ul>
           <p id="hard-winner" class="reveal-winner"></p>
