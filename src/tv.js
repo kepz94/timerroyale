@@ -45,6 +45,8 @@ let isTeams = false;
 let awaitingNextGame = false; // between-games: wait for the host to tap Next
 let draftState = null;
 let clockTimer = null;         // live TV clock loop (team tournaments)
+let currentScreen = null;      // for the per-round hint splash
+let hintTimer = null;
 let pickDeadline = 0;
 let draftClock = null;
 
@@ -112,7 +114,20 @@ function render() {
 /* ---------------- state-screen helpers (TR-52) ---------------- */
 // Toggle the three distinct board screens. 'active' = live gameplay,
 // 'reveal' = the recorded-times card layout, 'bracket' = the between-games tree.
+// TR-52 per-round hint: a brief mode splash the moment a play screen begins.
+function showRoundHint(s) {
+  const sp = el('tv-splash'); if (!sp) return;
+  const info = s === 'hard' ? { t: 'HARD CLASSIC', h: 'Hit EXACTLY!' } : { t: 'CLASSIC', h: 'Get close!' };
+  el('splash-title').textContent = info.t;
+  el('splash-hint').textContent = info.h;
+  sp.hidden = false; sp.classList.remove('show'); void sp.offsetWidth; sp.classList.add('show');
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => { sp.hidden = true; sp.classList.remove('show'); }, 2000);
+}
+
 function showScreen(s) {
+  const entering = (s === 'active' || s === 'hard') && currentScreen !== 'active' && currentScreen !== 'hard';
+  currentScreen = s;
   el('tv-active').hidden = s !== 'active';
   el('tv-reveal').hidden = s !== 'reveal';
   el('tv-hard').hidden = s !== 'hard';
@@ -120,6 +135,7 @@ function showScreen(s) {
   if (s !== 'bracket') el('tv-rotation').textContent = '';
   if (s === 'reveal' || s === 'hard' || s === 'bracket') el('tv-standings').hidden = true;
   if (s === 'bracket') { el('tv-ledger').hidden = true; el('tv-turn').hidden = true; }
+  if (entering) showRoundHint(s);
 }
 
 // TR-52 §5: the Hard Classic retry-loop screen — live attempt history while the
