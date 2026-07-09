@@ -17,9 +17,25 @@
       .dpad .right { grid-column: 3; grid-row: 2; } .dpad .down { grid-column: 2; grid-row: 3; }
       .dpad .back { grid-column: 1 / 2; grid-row: 4; font-size: 1rem; }
       .dpad .select { grid-column: 2 / 4; grid-row: 4; background: #12321c; font-size: 1rem; }
+
+      /* Reconnect — always reachable if the controller freezes */
+      #reconnect-btn { position: fixed; top: .6rem; right: .6rem; z-index: 60;
+        background: #12321c; color: #4ade80; border: 1px solid #22c55e; border-radius: .5rem;
+        font-size: .85rem; padding: .4rem .7rem; }
+      /* Bigger, readable status + a real result panel (no more "just a button") */
+      .turn-banner { font-size: 1.3rem; line-height: 1.3; }
+      #result-panel { margin: 1.1rem auto 0; max-width: 22rem; background: #121c14;
+        border-radius: 14px; padding: 1rem 1.2rem; }
+      #result-panel .res-title { font-size: 1.5rem; font-weight: 800; margin-bottom: .6rem; }
+      #result-panel .res-row { font-size: 1.2rem; padding: .4rem 0; display: flex;
+        justify-content: space-between; gap: 1rem; border-top: 1px solid #1e2b20; }
+      #result-panel .res-row:first-of-type { border-top: none; }
+      #result-panel .res-row.me { color: #4ade80; font-weight: 800; }
+      #result-panel .res-sub { color: #7e967f; margin-top: .3rem; }
     </style>
   </head>
   <body class="player">
+    <button id="reconnect-btn" type="button" title="Reload if the screen freezes">⟳ Reconnect</button>
     <div id="account-chip" class="account-chip">
       <button id="auth-btn" class="join-btn auth-btn" type="button" hidden>Sign in with Google</button>
       <button id="auth-name" class="auth-name" type="button" hidden></button>
@@ -39,6 +55,7 @@
         <p id="joined-name" class="joined-name"></p>
         <p id="turn-banner" class="turn-banner"></p>
         <button id="big-press" class="big-btn" type="button" hidden aria-label="Press"><span id="big-press-label">TAP TO START</span></button>
+        <div id="result-panel" hidden aria-live="polite"></div>
         <button id="next-round-btn" class="join-btn" type="button" hidden>Next Round ▶</button>
         <section id="draft-panel" hidden aria-label="Team draft">
           <p id="draft-pool-label" class="players-label" hidden>Your pick — tap a player:</p>
