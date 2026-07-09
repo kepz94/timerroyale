@@ -481,7 +481,7 @@ el('join-code-form').addEventListener('submit', (e) => {
     el('code-error').textContent = 'Codes are 4 letters/numbers — check the TV.';
     return;
   }
-  location.href = `/player.html?room=${code}`;
+  location.href = `/play/${code}`;
 });
 el('solo-again').addEventListener('click', () => (mode === 'guess-solo' ? startGuessSolo() : startGame()));
 el('solo-exit').addEventListener('click', () => {
