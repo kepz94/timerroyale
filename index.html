@@ -45,19 +45,25 @@
       <p class="subtitle">Land on the target — blind.</p>
 
       <div id="menu" class="menu">
-        <button id="solo-btn" class="join-btn menu-btn" type="button">Single Player</button>
-        <button id="daily-btn" class="join-btn menu-btn" type="button">Daily Royale</button>
-        <button id="guess-solo-btn" class="join-btn menu-btn" type="button">Guess Timer</button>
-        <button id="join-game-btn" class="join-btn menu-btn menu-btn-alt" type="button">Join a Game</button>
-        <button id="host-link" class="join-btn menu-btn menu-btn-alt" type="button">Host a Game</button>
+        <button id="nav-solo" class="join-btn menu-btn" type="button">Solo</button>
+        <button id="nav-party" class="join-btn menu-btn" type="button">Party</button>
+        <button id="nav-profile" class="join-btn menu-btn menu-btn-alt" type="button">Profile</button>
       </div>
 
-      <div id="host-choice" class="menu" hidden>
-        <p class="players-label">Host a game</p>
-        <button id="host-party-btn" class="join-btn menu-btn" type="button">Party Mode — cast to TV</button>
-        <button id="host-1v1-btn" class="join-btn menu-btn" type="button">1v1 Online Invite</button>
-        <button id="my-1v1s-btn" class="join-btn menu-btn" type="button">My 1v1s</button>
-        <button id="host-choice-back" class="join-btn menu-btn menu-btn-alt" type="button">Back</button>
+      <div id="solo-menu" class="menu" hidden>
+        <p class="players-label">Solo</p>
+        <button id="casual-btn" class="join-btn menu-btn" type="button">Casual Play</button>
+        <button id="daily-btn" class="join-btn menu-btn" type="button">Daily Royale</button>
+        <button id="solo-1v1-btn" class="join-btn menu-btn" type="button">1v1</button>
+        <button id="solo-my1v1s-btn" class="join-btn menu-btn menu-btn-alt" type="button">My 1v1s</button>
+        <button id="solo-menu-back" class="join-btn menu-btn menu-btn-alt" type="button">Back</button>
+      </div>
+
+      <div id="party-menu" class="menu" hidden>
+        <p class="players-label">Party — in-person games</p>
+        <button id="party-host-btn" class="join-btn menu-btn" type="button">Host — cast to TV</button>
+        <button id="party-join-btn" class="join-btn menu-btn menu-btn-alt" type="button">Join with a code</button>
+        <button id="party-menu-back" class="join-btn menu-btn menu-btn-alt" type="button">Back</button>
       </div>
 
       <section id="host-1v1-panel" class="game-panel" hidden aria-label="1v1 invite setup">
