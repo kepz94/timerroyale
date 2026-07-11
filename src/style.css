@@ -14,6 +14,17 @@
   font-display: swap;
 }
 
+/* ---- Stage 2 identity utilities (ADR-006 typography law) ----
+   .tv-words  — every WORD on the board: bold, wide, uppercase sans.
+   .led       — a lit seven-segment readout (NUMERALS ONLY) with glow.
+   .led-ghost — dim unlit "888" segments layered behind a .led:
+   <span class="led-wrap"><span class="led-ghost">8.88</span><span class="led">4.20</span></span> */
+.tv-words { font-family: var(--font-words); font-weight: 800; letter-spacing: var(--track-wide); text-transform: uppercase; }
+.led { font-family: var(--font-digits); text-shadow: var(--led-glow); }
+.led-wrap { position: relative; display: inline-grid; }
+.led-wrap > * { grid-area: 1 / 1; }
+.led-ghost { font-family: var(--font-digits); opacity: var(--ghost-opacity); user-select: none; pointer-events: none; }
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 [hidden] { display: none !important; }
 body {

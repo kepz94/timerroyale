@@ -17,10 +17,17 @@
   --win: #fbbf24;           /* winner gold */
   --accent: #4ade80;        /* joins, info, links — green LED family */
 
-  /* Typography — big and readable from a couch */
+  /* Typography — the ADR-006 law: seven-segment faces are a NUMBERS-ONLY
+     privilege (with dim ghost segments behind lit digits); ALL words use a
+     bold, wide, technical sans readable from a couch. Letters and digits may
+     share a screen, never a typeface. */
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-digits: 'DSEG7-Classic', ui-monospace, monospace;   /* seven-segment numerals */
-  --font-alnum: 'DSEG14-Classic', ui-monospace, monospace;   /* fourteen-segment letters+numbers */
+  --font-digits: 'DSEG7-Classic', ui-monospace, monospace;   /* numerals ONLY */
+  --font-words: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; /* + .tv-words: 800 weight, wide tracking, uppercase */
+  /* DEPRECATED by the typography law — do not use segment faces for words: */
+  --font-alnum: 'DSEG14-Classic', ui-monospace, monospace;
+  --ghost-opacity: 0.14;     /* dim unlit segments behind lit digits */
+  --track-wide: 0.14em;      /* word tracking for TV labels */
   --led-glow: 0 0 10px rgb(34 197 94 / 0.55), 0 0 34px rgb(34 197 94 / 0.22);
   --led-glow-warn: 0 0 10px rgb(245 158 11 / 0.55), 0 0 34px rgb(245 158 11 / 0.22);
   --led-glow-danger: 0 0 10px rgb(239 68 68 / 0.6), 0 0 34px rgb(239 68 68 / 0.25);
