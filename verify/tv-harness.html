@@ -115,12 +115,14 @@
           `<div class="team"><span class="name" style="color:${ca}">${a}</span><span class="dot-strip">🔵🔵🔵⚪</span></div>` +
           `<div class="team"><span class="name" style="color:${cb}">${b}</span><span class="dot-strip">🔴⚪⚪⚪</span></div>`;
       }
-      function bracketHTML(n) {
-        // mirrors renderBracket markup for n teams (size = next pow2, byes to top seeds)
-        const size = n <= 2 ? 2 : n <= 4 ? 4 : 8;
+      function bracketHTML(n, usernames) {
+        // mirrors renderBracket markup for n entrants (size = next pow2, byes to top seeds)
+        const size = n <= 2 ? 2 : n <= 4 ? 4 : n <= 8 ? 8 : 16;
         const roundsCount = Math.log2(size);
-        const labels = roundsCount === 1 ? ['Final'] : roundsCount === 2 ? ['Semifinal', 'Final'] : ['Quarterfinal', 'Semifinal', 'Final'];
+        const labels = [['Final'], ['Semifinal', 'Final'], ['Quarterfinal', 'Semifinal', 'Final'],
+          ['Round 1', 'Quarterfinal', 'Semifinal', 'Final']][roundsCount - 1];
         const host = el('tv-bracket'); host.hidden = false; host.innerHTML = '';
+        host.classList.toggle('bkt-big', size / 2 > 4);
         let teamIdx = 0;
         for (let r = 0; r < roundsCount; r++) {
           const col = document.createElement('div'); col.className = 'bkt-col';
@@ -131,7 +133,10 @@
             box.className = 'bkt-match' + (r === 0 && m === 0 ? ' current' : '');
             const mk = (slotN) => {
               if (r > 0) return `<div class="bkt-slot"><span class="who">TBD</span><span class="games">(0)</span></div>`;
-              if (teamIdx < n) { const t = TEAMS8[teamIdx++]; return `<div class="bkt-slot"><span class="who" style="color:${TC(t.id.slice(1))}">${t.emoji} ${t.name}</span><span class="games">(${slotN})</span></div>`; }
+              if (teamIdx < n) {
+                if (usernames) { const p = LONGP[teamIdx++ % LONGP.length]; return `<div class="bkt-slot"><span class="who">${p}</span><span class="games">(${slotN})</span></div>`; }
+                const t = TEAMS8[teamIdx++]; return `<div class="bkt-slot"><span class="who" style="color:${TC(t.id.slice(1))}">${t.emoji} ${t.name}</span><span class="games">(${slotN})</span></div>`;
+              }
               return `<div class="bkt-slot"><span class="who">(bye)</span><span class="games">(0)</span></div>`;
             };
             box.innerHTML = mk(1) + mk(0);
@@ -205,6 +210,16 @@
         bracket8() {
           showGame(); el('tv-match-banner').innerHTML = '<span class="tv-words">🏆 THE BRACKET</span>'; bracketHTML(8);
           el('tv-rotation').textContent = 'Next up: 🐉 THUNDERDOMES vs 🦈 SHARKNADOOOOOOOS — first to 4 takes the game';
+          el('tv-game-msg').textContent = 'Host — tap Next on your phone to start this game.';
+        },
+        bracket10() {
+          showGame(); el('tv-match-banner').innerHTML = '<span class="tv-words">🏆 THE BRACKET</span>'; bracketHTML(10, true);
+          el('tv-rotation').textContent = 'Next up: MAXIMILIANOOOOOO vs Bartholomewwwwww — first to 4 takes the game';
+          el('tv-game-msg').textContent = 'Host — tap Next on your phone to start this game.';
+        },
+        bracket16() {
+          showGame(); el('tv-match-banner').innerHTML = '<span class="tv-words">🏆 THE BRACKET</span>'; bracketHTML(16, true);
+          el('tv-rotation').textContent = 'Next up: MAXIMILIANOOOOOO vs Bartholomewwwwww — first to 4 takes the game';
           el('tv-game-msg').textContent = 'Host — tap Next on your phone to start this game.';
         },
         active() {

@@ -577,14 +577,22 @@ function launchPve() {
   beginRound();
 }
 
-/* ---- PvP single-elim tournament (TR-52 hierarchy) ---- */
-function launchPvp() {
-  const ents = activePlayers().map((p) => ({ id: p.playerId, name: p.name }));
-  tourney = createTournament(ents); // MATCH = Best of 5 games (first to 3)
+/* ---- PvP single-elim tournament: every player for themselves. Inherits the
+   Teams presentation wholesale (title card, bracket reveal, matchup beats,
+   awards, champion, rematch) — no captains/logos, just usernames. ---- */
+async function launchPvp() {
+  const roster = activePlayers();
+  if (roster.length > 16) return setupMsg('PvP bracket caps at 16 players — run Teams for a bigger room.');
+  // Random seeding: join order is not a skill ranking.
+  const ents = [...roster].sort(() => Math.random() - 0.5).map((p) => ({ id: p.playerId, name: p.name }));
+  isTeams = false;
+  tourney = createTournament(ents); // MATCH = Best of 3 games
   bracket = tourney.bracket;
   showGame(true);
+  dbSet(dbRef(db, `sessions/${lobbyId}/match`), { type: 'tournament', status: 'playing' }).catch(() => {});
   logTransition('tv', 'setup', 'pvp-launch', `${ents.length} players`);
-  nextTourneyGame();
+  await titleCard({ kicker: 'Tonight', title: 'PVP TOURNAMENT', hint: `${ents.length} players — one champion`, tone: 'target' });
+  revealBracket(() => nextTourneyGame());
 }
 
 // Persist the whole tournament (bracket + config + current match) so a TV reload
@@ -845,7 +853,11 @@ async function finalizeDraft() {
 // moment, the empty skeleton appears and HOLDS, then each team slots into its
 // seed one by one with a sting — every matchup its own moment.
 async function revealBracket(done) {
-  const ids = bracket.entrants.map((e) => e.id);
+  // ≤8 entrants (Teams): each team slots in individually (A7). Bigger fields
+  // (PvP, up to 16): one beat per MATCHUP so the reveal holds ~13s, not 26.
+  const beats = bracket.entrants.length > 8
+    ? bracket.rounds[0].map((m) => [m.a, m.b].filter(Boolean).map((e) => e.id)).filter((b) => b.length)
+    : bracket.entrants.map((e) => [e.id]);
   const shown = new Set();
   await titleCard({ kicker: 'The night takes shape', title: 'THE BRACKET', hint: 'Every matchup, revealed', tone: 'target' });
   el('tv-match-banner').innerHTML = '<span class="tv-words">🏆 THE BRACKET</span>';
@@ -854,9 +866,9 @@ async function revealBracket(done) {
   renderBracket(shown);
   let i = 0;
   const step = () => {
-    if (i >= ids.length) { setTimeout(done, 2400); return; }
-    shown.add(ids[i]); i += 1;
-    renderBracket(shown, ids[i - 1]);
+    if (i >= beats.length) { setTimeout(done, 2400); return; }
+    beats[i].forEach((id) => shown.add(id)); i += 1;
+    renderBracket(shown, beats[i - 1][0]);
     sting();
     setTimeout(step, 1600);
   };
@@ -1057,6 +1069,8 @@ function renderBracket(mask, justRevealedId) {
   // justRevealedId: the entrant landing THIS beat — its match box pops in.
   showScreen('bracket');
   const host = el('tv-bracket'); host.innerHTML = '';
+  // Big fields (PvP 9-16 players): compact rows so 8 first-round matches fit.
+  host.classList.toggle('bkt-big', bracket.rounds[0].length > 4);
   bracket.rounds.forEach((round, ri) => {
     const col = document.createElement('div'); col.className = 'bkt-col';
     const h = document.createElement('div'); h.className = 'bkt-col-head'; h.textContent = roundLabel(bracket, ri);
@@ -1126,7 +1140,9 @@ function renderChampion(c) {
   el('reveal-head').innerHTML = `<span style="font-size:2.2em;line-height:1">${emoji}</span>`;
   el('reveal-sub').innerHTML = `<span class="tv-words" style="font-size:1.6em;color:var(--win)">${c.name.replace(/^\p{Extended_Pictographic}\s*/u, '')}</span>`;
   const wrap = el('reveal-cards'); wrap.innerHTML = '';
-  (c.members || []).forEach((m) => {
+  // Teams: one card per member. PvP: the champion IS the card (entrant id = playerId).
+  const champCards = c.members || [{ playerId: c.id, name: c.name }];
+  champCards.forEach((m) => {
     const pc = document.createElement('div');
     pc.className = 'reveal-card win';
     pc.innerHTML = `<div class="rc-ava">${(m.name[0] || '?').toUpperCase()}</div><div class="rc-name">${m.name}</div><div class="rc-dev">${tonightLine(night, m.playerId) || ''}</div>`;
@@ -1190,7 +1206,9 @@ function onEndNightChoice(choice) {
     pendingRematch = lastTeams
       ? { teams: lastTeams, rosterIds: lastTeams.flatMap((t) => t.members.map((m) => m.playerId)).sort().join(',') }
       : null;
-    backToLobby('REMATCH — same teams! Host taps START (roster changes trigger a new draft).');
+    backToLobby(pendingRematch
+      ? 'REMATCH — same teams! Host taps START (roster changes trigger a new draft).'
+      : 'REMATCH! Host taps START for a fresh bracket.');
   }
 }
 

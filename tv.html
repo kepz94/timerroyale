@@ -344,6 +344,12 @@
       .bkt-match { padding: clamp(.5rem, 1.2vh, 1.1rem) clamp(.8rem, 1.4vw, 1.6rem); }
       .bkt-col { gap: clamp(.6rem, 1.6vh, 1.5rem); }
       .bkt-col-head { font-size: clamp(1rem, 1.7vw, 1.8rem); }
+      /* PvP big fields (9-16 players): 8 first-round matches share one column */
+      .tv-bracket.bkt-big .bkt-slot { font-size: clamp(.8rem, 1.2vw, 1.3rem); padding: .14rem 0; }
+      .tv-bracket.bkt-big .bkt-match { padding: clamp(.25rem, .6vh, .5rem) clamp(.6rem, 1vw, 1.2rem);
+        border-left-width: 5px; }
+      .tv-bracket.bkt-big .bkt-col { gap: clamp(.3rem, .8vh, .7rem); }
+      .tv-bracket.bkt-big .bkt-col-head { font-size: clamp(.85rem, 1.4vw, 1.5rem); margin-bottom: .2rem; }
       #draft-stage { width: 100%; }
       .df-teams { width: 100%; }
       .df-clock { font-size: clamp(2rem, 4.2vw, 4.4rem); }
