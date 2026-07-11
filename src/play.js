@@ -187,32 +187,53 @@ function onJoined() { el('join-form').hidden = true; el('joined-panel').hidden =
 
 const hostPlayer = () => players.find((p) => p.uid);
 
-// The controller's result panel: "locked in" after you stop (blind), then the
-// full reveal (your time + deviation vs opponents + who won) once the round ends.
+// The phone as personal narrator (TR-56 spec B6): "locked in" after you stop
+// (blind), then a PERSONAL verdict once the round ends — won/lost by X with
+// your full numbers, clutch/DNF theatrics kept, then the take-a-seat cue.
+// Covers all three round shapes so the phone is never dark on a reveal.
 function renderResult() {
   const panel = el('result-panel');
   if (!panel) return;
   const g = gameState;
   const mine = g && g.players ? g.players[me?.playerId] : null;
-  if (!g || g.mode !== 'target' || !mine) { panel.hidden = true; return; } // hard/guess have their own UIs
-  if (g.status === 'over') {
-    const rows = Object.keys(g.players).map((id) => {
-      const s = g.players[id];
-      const t = s.state === 'stopped' ? `${fmt2(s.elapsedMs)}s (${signed(s.elapsedMs - g.targetMs)})` : s.state === 'dnf' ? 'DNF' : '—';
-      const win = g.winner && g.winner.playerId === id ? ' 🏆' : '';
-      const label = id === me.playerId ? 'You' : s.name;
-      return `<div class="res-row${id === me.playerId ? ' me' : ''}"><span>${label}${win}</span><span>${t}</span></div>`;
-    }).join('');
-    const iWon = g.winner && g.winner.playerId === me.playerId;
-    const title = iWon ? '🏆 You won the round!' : (g.winner ? 'You lost this round' : 'No winner this round');
-    panel.innerHTML = `<div class="res-title">${title}</div>${rows}`;
-    panel.hidden = false;
-  } else if (mine.state === 'stopped') {
-    panel.innerHTML = '<div class="res-title">🔒 Locked in</div><div class="res-sub">Waiting for the reveal on the TV…</div>';
-    panel.hidden = false;
-  } else {
-    panel.hidden = true;
+  if (!g || !mine || g.mode === 'present') { panel.hidden = true; return; }
+  if (g.status !== 'over') {
+    if (g.mode === 'target' && mine.state === 'stopped') {
+      panel.innerHTML = '<div class="res-title">🔒 Locked in</div><div class="res-sub">Waiting for the reveal on the TV…</div>';
+      panel.hidden = false;
+    } else panel.hidden = true;
+    return;
   }
+  const iWon = g.winner && g.winner.playerId === me.playerId;
+  let myDev = null;
+  const lines = [];
+  if (g.mode === 'guess') {
+    myDev = Number.isFinite(mine.deltaMs) ? mine.deltaMs : null;
+    lines.push(`Actual ${fmt2(g.actualMs)}s · your guess ${mine.guessMs != null ? fmt2(mine.guessMs) : '0.00'}s`);
+  } else if (g.mode === 'hard') {
+    const att = (g.attempts && g.attempts[me.playerId]) || [];
+    myDev = att.length ? Math.min(...att.map((a) => Math.abs(a.elapsedMs - g.targetMs))) : null;
+    lines.push(`Target ${fmt2(g.targetMs)}s · ${att.length} attempt${att.length === 1 ? '' : 's'}${myDev != null ? ` · best Δ${fmt2(myDev)}s` : ''}`);
+  } else {
+    myDev = mine.state === 'stopped' ? Math.abs(mine.elapsedMs - g.targetMs) : null;
+    lines.push(mine.state === 'stopped'
+      ? `Target ${fmt2(g.targetMs)}s · you ${fmt2(mine.elapsedMs)}s (${signed(mine.elapsedMs - g.targetMs)}s)`
+      : `Target ${fmt2(g.targetMs)}s`);
+  }
+  // Margin between the two best deviations = the "by X" in the verdict.
+  const devs = Object.values(g.players)
+    .map((p) => g.mode === 'guess' ? p.deltaMs
+      : g.mode === 'hard' ? ((g.attempts?.[p.playerId] || []).length ? Math.min(...g.attempts[p.playerId].map((a) => Math.abs(a.elapsedMs - g.targetMs))) : null)
+      : (p.state === 'stopped' ? p.deviationMs : null))
+    .filter(Number.isFinite).sort((a, b) => a - b);
+  const margin = devs.length >= 2 ? devs[1] - devs[0] : null;
+  let headline;
+  if (mine.state === 'dnf' && !iWon) headline = '💥 DNF — the clock beat you';
+  else if (iWon) headline = (myDev != null && myDev <= 50 ? '🧊 CLUTCH WIN' : '🏆 WON') + (margin != null ? ` by ${fmt2(margin)}s` : '!');
+  else if (g.winner) headline = `LOST${margin != null ? ` by ${fmt2(margin)}s` : ' this round'}`;
+  else headline = 'No winner this round';
+  panel.innerHTML = `<div class="res-title">${headline}</div><div class="res-sub">${lines.join('<br>')}</div><div class="res-sub">🪑 Take a seat — eyes on the TV</div>`;
+  panel.hidden = false;
 }
 
 // Guess Timer controller: the phone is a private numeric keypad. Show it only
