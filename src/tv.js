@@ -21,6 +21,7 @@ import { createTournament, restoreTournament, serializeTournament, ROUNDS_TO_WIN
 import { createClassicTargets } from './targets.js';
 import { createTeamGame, distributeTeams } from './teamgame.js';
 import { createDraftState, applyPick, autoPick, draftTeams } from './draft.js';
+import { blankNight, recordRound, roundEntries, tonightLine } from './stats.js';
 import { ref as dbRef, set as dbSet, get as dbGet } from 'firebase/database';
 import { fmtOff, fmtS2, fmtS, fmtSigned } from './format.js';
 
@@ -397,6 +398,22 @@ const activePlayers = () => players.filter((p) => p.connected !== false).map(({ 
    on their phones. The presentation holds a minimum 6s beat. The host's Next
    acts as a force-start escape hatch if someone wanders off. */
 let presenting = null; // { reps, ready:Set, t0, fired }
+// Tonight-stats ledger (TR-56): accumulates across games AND rematches in this
+// lobby; persisted at sessions/room/stats and restored on TV reload.
+let night = blankNight();
+let lastStatsKey = null;
+
+function noteRoundOver(g) {
+  if (!g || g.status !== 'over') return;
+  const key = `${g.mode}|${g.targetMs ?? g.actualMs}|${Object.values(g.players || {})
+    .map((p) => `${p.playerId}:${p.elapsedMs ?? p.guessMs ?? p.state}`).join(',')}`;
+  if (key === lastStatsKey) return; // over-states re-render; record once
+  const mapped = roundEntries(g);
+  if (!mapped) return; // dead-heat void — the round reruns, nothing counts
+  lastStatsKey = key;
+  recordRound(night, mapped);
+  dbSet(dbRef(db, `sessions/${lobbyId}/stats`), night).catch(() => {});
+}
 let nextKind = null;   // mode resolved AT presentation time so the TV can announce it
 
 const KIND_LABEL = {
@@ -451,9 +468,10 @@ function renderPresent() {
   el('reveal-sub').innerHTML = `<span class="tv-words">${obj}</span>`;
   const wrap = el('reveal-cards'); wrap.innerHTML = '';
   [reps.a, reps.b].forEach((r) => {
+    const record = tonightLine(night, r.playerId) || 'first round tonight';
     const card = document.createElement('div');
     card.className = 'reveal-card' + (ready.has(r.playerId) ? ' win' : '');
-    card.innerHTML = `<div class="rc-team tv-words">${ready.has(r.playerId) ? 'READY' : 'STAND UP'}</div><div class="rc-name">${r.name}</div><div class="rc-dev tv-words">${ready.has(r.playerId) ? '✓' : 'face away from the TV'}</div>`;
+    card.innerHTML = `<div class="rc-team tv-words">${ready.has(r.playerId) ? 'READY' : 'STAND UP'}</div><div class="rc-name">${r.name}</div><div class="rc-dev">${record}</div><div class="rc-dev tv-words">${ready.has(r.playerId) ? '✓' : 'face away from the TV'}</div>`;
     wrap.appendChild(card);
   });
   el('reveal-winner').textContent = ready.size === 2 ? 'Both ready — here we go…' : 'Round starts when BOTH tap READY on their phones.';
@@ -665,6 +683,7 @@ function startTeamMatch() {
 }
 
 function renderTeamRound(g, ctx) {
+  noteRoundOver(g);
   showLedger(ctx.teamA.name, ctx.winsA, ctx.teamB.name, ctx.winsB);
   if (g.mode === 'hard') { renderHard(g, ctx); return; }
   if (g.mode === 'guess') { renderGuess(g, ctx); return; }
@@ -705,6 +724,7 @@ function renderTeamRound(g, ctx) {
 
 /* ---------------- rendering (PvE round + PvP duel) ---------------- */
 function renderRound(g) {
+  noteRoundOver(g);
   if (g.mode === 'hard') { renderHard(g, null); return; }
   if (g.mode === 'guess') { renderGuess(g, null); return; }
   const ids = Object.keys(g.players);
@@ -861,6 +881,12 @@ async function boot() {
   // The snapshot rides in the match node from ANY point: persistTournament writes
   // it between games; koth carries it (matchExtra) during a PvP game; teamgame
   // leaves the between-games snapshot intact. The current game restarts 0-0.
+  // Restore the tonight-stats ledger so records survive a TV reload and keep
+  // accumulating across rematches in this lobby (TR-56).
+  try {
+    const st = (await dbGet(dbRef(db, `sessions/${lobbyId}/stats`))).val();
+    if (st && st.players) night = st;
+  } catch { /* fresh night */ }
   try {
     const m = (await dbGet(dbRef(db, `sessions/${lobbyId}/match`))).val();
     if (m && m.snapshot && m.snapshot.entrants && m.status !== 'complete') {
