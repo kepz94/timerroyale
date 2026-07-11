@@ -8,6 +8,16 @@
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="stylesheet" href="/src/style.css" />
     <style>
+      .host-config { max-width: 22rem; margin: 1rem auto 0; text-align: left; }
+      .hc-title { font-size: .85rem; letter-spacing: .08em; text-transform: uppercase;
+        color: #7e967f; margin: .9rem 0 .4rem; }
+      .hc-row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+      .hc-toggle { opacity: .55; }
+      .hc-toggle.hc-on { opacity: 1; outline: 2px solid #22c55e; }
+      .hc-count { font-size: 1.6rem; font-weight: 800; min-width: 2rem; text-align: center; }
+      .hc-start { width: 100%; margin-top: 1rem; font-size: 1.2rem; }
+      .hc-msg { color: #f0b429; min-height: 1.2em; }
+      #hc-pve { display: flex; flex-direction: column; gap: .5rem; }
       .dpad { display: grid; grid-template-columns: repeat(3, 4.5rem); grid-auto-rows: 4.5rem;
         gap: 0.5rem; justify-content: center; margin: 1.2rem auto; }
       .dpad-btn { font-size: 1.4rem; border-radius: 0.7rem; border: 1px solid #22c55e;
@@ -107,13 +117,31 @@
           </div>
           <button id="draft-start-btn" class="join-btn" type="button" hidden>Start Tournament ▶</button>
         </section>
-        <div id="dpad" class="dpad" hidden aria-label="Host remote">
-          <button class="dpad-btn up" data-dir="up" type="button">▲</button>
-          <button class="dpad-btn left" data-dir="left" type="button">◀</button>
-          <button class="dpad-btn right" data-dir="right" type="button">▶</button>
-          <button class="dpad-btn down" data-dir="down" type="button">▼</button>
-          <button class="dpad-btn back" data-dir="back" type="button">BACK</button>
-          <button class="dpad-btn select" data-dir="select" type="button">SELECT</button>
+        <div id="host-config" class="host-config" hidden aria-label="Host setup">
+          <p class="hc-title">Game pool</p>
+          <div class="hc-row">
+            <button class="join-btn hc-toggle" data-pool="classic" type="button">Classic</button>
+            <button class="join-btn hc-toggle" data-pool="hard" type="button">Hard</button>
+            <button class="join-btn hc-toggle" data-pool="guess" type="button">Guess</button>
+          </div>
+          <p class="hc-title">Category</p>
+          <div class="hc-row">
+            <button class="join-btn hc-toggle" data-cat="pve" type="button">PvE Arcade</button>
+            <button class="join-btn hc-toggle" data-cat="pvp" type="button">PvP</button>
+            <button class="join-btn hc-toggle" data-cat="teams" type="button">Teams</button>
+          </div>
+          <div id="hc-pve" hidden>
+            <button id="hc-pve-mode" class="join-btn" type="button"></button>
+            <button id="hc-koth-n" class="join-btn" type="button"></button>
+          </div>
+          <div id="hc-teams" class="hc-row" hidden>
+            <button id="hc-teams-minus" class="join-btn" type="button">−</button>
+            <span id="hc-teams-count" class="hc-count">2</span>
+            <button id="hc-teams-plus" class="join-btn" type="button">+</button>
+            <span class="hc-title" style="margin:0">teams</span>
+          </div>
+          <button id="hc-start" class="join-btn hc-start" type="button">▶ START GAME</button>
+          <p id="hc-msg" class="hc-msg"></p>
         </div>
         <p class="players-label">In this lobby</p>
         <ul id="player-list" class="player-list"></ul>

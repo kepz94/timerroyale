@@ -55,9 +55,16 @@ export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, 
     // TR-52 Dead-Heat Tie-Breaker (opt-in): identical absolute deviations void
     // the round — no win is awarded and a fresh target reruns automatically.
     if (deadHeatVoid) {
+      // Contenders by deviation — Classic uses 'stopped'/deviationMs, Guess uses
+      // 'guessed'/deltaMs. The old stopped-only filter let Guess ties fall
+      // through to insertion order, silently handing player 1 the win (TR-54).
       const stopped = Object.values(roundState.players || {})
-        .filter((s) => s.state === 'stopped')
-        .map((s) => ({ playerId: s.playerId, deviationMs: s.deviationMs }));
+        .map((s) => s.state === 'stopped'
+          ? { playerId: s.playerId, deviationMs: s.deviationMs }
+          : s.state === 'guessed' && s.deltaMs != null
+            ? { playerId: s.playerId, deviationMs: s.deltaMs }
+            : null)
+        .filter(Boolean);
       if (classicOutcome(stopped).deadHeat) {
         status = 'between';
         logTransition('koth', 'round', 'tie-void', `round ${roundNum}: dead-heat, rerunning`);
@@ -96,6 +103,11 @@ export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, 
     } else {
       status = 'between';
       logTransition('koth', 'round', 'no-win', `hard round ${roundNum}: void`);
+      // Stage 1: an exact tie restarts the round with a fresh target.
+      publish();
+      onMatch?.({ ...matchState(), tieVoid: true }, null);
+      setTimeout(() => { if (status === 'between') nextRound(); }, 2600);
+      return;
     }
     publish();
     onMatch?.(matchState(), null);

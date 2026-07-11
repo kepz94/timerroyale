@@ -68,7 +68,13 @@ export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, on
   // Award a Hard round's dot (winnerId from createHardRound; null = washout tie).
   function awardRound(winnerId) {
     if (status !== 'round') return;
-    if (!winnerId) { status = 'between'; onGame?.({ status: 'tie-void', winsA, winsB, roundNum }); return; }
+    if (!winnerId) {
+      // Stage 1: an exact tie restarts the round with a fresh target.
+      status = 'between';
+      onGame?.({ status: 'tie-void', winsA, winsB, roundNum });
+      setTimeout(() => { if (status === 'between') nextRound(); }, 2600);
+      return;
+    }
     if (winnerId === activeA.playerId) winsA += 1; else if (winnerId === activeB.playerId) winsB += 1;
     roundNum += 1;
     if (winsA >= n || winsB >= n) { status = 'over'; onGame?.({ status: 'over', winner: winsA >= n ? teamA : teamB, winsA, winsB }); }
@@ -80,9 +86,16 @@ export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, on
     // TR-52 Dead-Heat Tie-Breaker (opt-in): identical absolute deviations void
     // the round — no dot, rerun the same matchup with a fresh target.
     if (deadHeatVoid) {
+      // Classic 'stopped'/deviationMs OR Guess 'guessed'/deltaMs — the old
+      // stopped-only filter let Guess ties award player 1 by insertion order
+      // (TR-54: ties must draw and rerun).
       const stopped = Object.values(g.players || {})
-        .filter((s) => s.state === 'stopped')
-        .map((s) => ({ playerId: s.playerId, deviationMs: s.deviationMs }));
+        .map((s) => s.state === 'stopped'
+          ? { playerId: s.playerId, deviationMs: s.deviationMs }
+          : s.state === 'guessed' && s.deltaMs != null
+            ? { playerId: s.playerId, deviationMs: s.deltaMs }
+            : null)
+        .filter(Boolean);
       if (classicOutcome(stopped).deadHeat) {
         status = 'between';
         onGame?.({ status: 'tie-void', winsA, winsB, roundNum });

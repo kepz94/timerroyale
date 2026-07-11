@@ -20,11 +20,11 @@ export const CATEGORIES = { TEAMS: 'teams', PVP: 'pvp', PVE: 'pve' };
 export const PVE_OPTIONS = { KOTH: 'koth', LMS: 'lms' };
 
 export const KOTH_THRESHOLDS = [5, 7, 10];
-export const ROUND_HINT_MS = 3000; // 3-second pre-round splash
 
-// Match/game structure (party tournaments).
-export const TEAMS_MATCH = { gamesToWin: 3, roundsPerGame: 5 }; // Bo5, first to 5 rounds/game
-export const PVP_MATCH = { gamesToWin: 3, roundsPerGame: 5 };
+// Match/game structure (party tournaments) — Stage 1 (ADR-005): games are
+// first to 4 rounds, matches Best of 3. tournament.js owns the live values.
+export const TEAMS_MATCH = { gamesToWin: 2, roundsPerGame: 4 }; // Bo3, first to 4 rounds/game
+export const PVP_MATCH = { gamesToWin: 2, roundsPerGame: 4 };
 export const DRAFT_PICK_SECONDS = 20; // captain pick timeout before auto-assign
 
 // Hard-KOTH restricts targets to a fast, reactive range to balance difficulty.

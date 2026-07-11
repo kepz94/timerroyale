@@ -15,8 +15,10 @@
 // a reload (see tv.js) instead of restarting to the menu.
 import { createBracket, reportGameWin, activeMatches, isComplete } from './bracket.js';
 
-export const ROUNDS_TO_WIN_GAME = 5; // a GAME = first to 5 ledger dots
-export const GAMES_TO_WIN_MATCH = 3; // a MATCH = Best of 5 games (first to 3)
+// PLAN-TR-TEAMS-v1 Stage 1 (ADR-005): first-to-4 games, Best-of-3 matches —
+// shortens an 8-team night by 15-40 rounds vs the old 5/Bo5 structure.
+export const ROUNDS_TO_WIN_GAME = 4; // a GAME = first to 4 ledger dots
+export const GAMES_TO_WIN_MATCH = 2; // a MATCH = Best of 3 games (first to 2)
 
 // Internal: wrap a (fresh or restored) bracket in the scheduling API.
 function schedulerFor(bracket, { roundsToWinGame = ROUNDS_TO_WIN_GAME } = {}) {

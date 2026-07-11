@@ -9,8 +9,10 @@
 // Every function here is a standalone predicate/resolver; state lives in the
 // callers (round.js / koth.js / tv.js), so these rules stay isolated + testable.
 
-export const CLASSIC_CUTOFF_MS = 20000; // Classic ticker terminates at 20.00s -> DNF
-export const GUESS_WINDOW_MS = 15000;   // Guess submission window; late = default 0.00s
+// Stage 1 (ADR-005): the idle cutoff is 30.00s in ALL modes — absence is just
+// the idle rule, not a special state.
+export const CLASSIC_CUTOFF_MS = 30000; // Classic ticker terminates at 30.00s -> DNF
+export const GUESS_WINDOW_MS = 30000;   // Guess submission window; late = default 0.00s
 export const HARD_ATTEMPT_CAP = 13;     // Hard Classic attempts per representative per round
 
 /**

@@ -38,6 +38,7 @@ async function boot() {
   watchPlayers(db, code, (list) => { players = list; renderPhase(); });
   onValue(dref(db, `sessions/${code}/game`), (s) => { gameState = s.val(); renderPhase(); });
   onValue(dref(db, `sessions/${code}/match`), (s) => { matchState = s.val(); renderPhase(); });
+  onValue(dref(db, `sessions/${code}/config`), (s) => { cfgState = s.val(); renderPhase(); });
 }
 
 function stampUid() { if (me && currentUser) dupdate(dref(db, `sessions/${code}/players/${me.playerId}`), { uid: currentUser.uid }).catch(() => {}); }
@@ -51,7 +52,45 @@ watchAuth(async (user) => {
 el('auth-btn').addEventListener('click', async () => { el('auth-btn').disabled = true; try { await signInGoogle(); } catch (err) { if (err.code !== 'auth/popup-closed-by-user') console.warn('[auth]', err.code); } el('auth-btn').disabled = false; });
 el('signout-btn').addEventListener('click', signOutUser);
 
-document.querySelectorAll('#dpad [data-dir]').forEach((b) => { b.addEventListener('click', () => { if (me) sendEvent(db, code, me.playerId, 'nav', { dir: b.dataset.dir }); }); });
+/* ---- Host setup: touch config UI (Stage 1 — the D-pad remote is deleted).
+   The TV owns config truth at sessions/code/config; every control here sends
+   the WHOLE desired config as a 'cfg' event, and this panel re-renders from
+   the TV's published copy (stateless phone). ---- */
+let cfgState = null;
+
+function sendCfg(mutate) {
+  if (!me) return;
+  const c = cfgState
+    ? { pool: { ...cfgState.pool }, category: cfgState.category ?? null, pveMode: cfgState.pveMode, kothN: cfgState.kothN, numTeams: cfgState.numTeams }
+    : { pool: { classic: true, hard: false, guess: false }, category: null, pveMode: 'koth', kothN: 5, numTeams: 2 };
+  mutate(c);
+  sendEvent(db, code, me.playerId, 'cfg', { config: c });
+}
+
+document.querySelectorAll('#host-config [data-pool]').forEach((b) =>
+  b.addEventListener('click', () => sendCfg((c) => { c.pool[b.dataset.pool] = !c.pool[b.dataset.pool]; })));
+document.querySelectorAll('#host-config [data-cat]').forEach((b) =>
+  b.addEventListener('click', () => sendCfg((c) => { c.category = b.dataset.cat; })));
+el('hc-pve-mode')?.addEventListener('click', () => sendCfg((c) => { c.pveMode = c.pveMode === 'koth' ? 'lms' : 'koth'; }));
+el('hc-koth-n')?.addEventListener('click', () => sendCfg((c) => { const t = [5, 7, 10]; c.kothN = t[(t.indexOf(c.kothN) + 1) % t.length]; }));
+el('hc-teams-minus')?.addEventListener('click', () => sendCfg((c) => { c.numTeams = Math.max(2, (c.numTeams || 2) - 1); }));
+el('hc-teams-plus')?.addEventListener('click', () => sendCfg((c) => { c.numTeams = Math.min(8, (c.numTeams || 2) + 1); }));
+el('hc-start')?.addEventListener('click', () => { if (me) sendEvent(db, code, me.playerId, 'startgame'); });
+
+function renderHostConfig(show) {
+  const panel = el('host-config'); if (!panel) return;
+  panel.hidden = !show;
+  if (!show) return;
+  const c = cfgState || { pool: { classic: true, hard: false, guess: false }, category: null, pveMode: 'koth', kothN: 5, numTeams: 2 };
+  document.querySelectorAll('#host-config [data-pool]').forEach((b) => b.classList.toggle('hc-on', !!c.pool?.[b.dataset.pool]));
+  document.querySelectorAll('#host-config [data-cat]').forEach((b) => b.classList.toggle('hc-on', c.category === b.dataset.cat));
+  const pve = el('hc-pve'); if (pve) pve.hidden = c.category !== 'pve';
+  const tms = el('hc-teams'); if (tms) tms.hidden = c.category !== 'teams';
+  if (el('hc-pve-mode')) el('hc-pve-mode').textContent = c.pveMode === 'koth' ? `King of the Hill — first to ${c.kothN}` : 'Last Man Standing';
+  if (el('hc-koth-n')) { el('hc-koth-n').hidden = c.pveMode !== 'koth'; el('hc-koth-n').textContent = `First to: ${c.kothN} (tap to cycle)`; }
+  if (el('hc-teams-count')) el('hc-teams-count').textContent = String(c.numTeams || 2);
+  if (el('hc-msg')) el('hc-msg').textContent = c.msg || '';
+}
 el('big-press').addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (!me || gameState?.status !== 'running') return;
@@ -94,7 +133,7 @@ setInterval(() => { if (matchState && matchState.type === 'draft') renderDraftUI
 function renderDraftUI() {
   const d = matchState;
   el('draft-panel').hidden = false;
-  el('big-press').hidden = true; el('dpad').hidden = true; el('next-round-btn').hidden = true;
+  el('big-press').hidden = true; renderHostConfig(false); el('next-round-btn').hidden = true;
   if (el('result-panel')) el('result-panel').hidden = true;
   if (el('guess-panel')) el('guess-panel').hidden = true;
   const iAmCaptain = (d.teams || []).some((t) => t.captainId === me?.playerId);
@@ -188,7 +227,7 @@ function renderPhase() {
   const inMatch = matchState != null;
   const phase = over ? 'over' : active ? 'active' : inMatch ? 'intermission' : 'setup';
 
-  if (el('dpad')) el('dpad').hidden = !(iAmHost && phase === 'setup');
+  renderHostConfig(iAmHost && phase === 'setup');
   const inThisRound = phase === 'active' && me && gameState?.players && gameState.players[me.playerId];
   if (el('big-press')) el('big-press').hidden = !inThisRound || guessMode;
   if (inThisRound && !guessMode) {
@@ -210,7 +249,7 @@ function renderPhase() {
     else if (phase === 'active') banner.textContent = inThisRound ? '⏱ Tap to start, tap to stop — time it blind!' : '👀 Watching — you\'re up soon!';
     else if (phase === 'intermission') banner.textContent = iAmHost ? 'Round over — tap Next when ready.' : 'Round over — waiting for the host…';
     else if (phase === 'over') banner.textContent = '🏆 Game over — check the TV!';
-    else if (iAmHost) banner.textContent = '⭐ You are the HOST — set up the game on the TV with the remote.';
+    else if (iAmHost) banner.textContent = '⭐ You are the HOST — set up the night below; the TV mirrors your choices.';
     else if (host) banner.textContent = `Host: ${host.name}. Waiting for the game to start…`;
     else if (currentUser) banner.textContent = "You're signed in — you'll be host unless someone signed in before you.";
     else banner.textContent = 'Waiting for a signed-in host. Sign in with Google to host.';

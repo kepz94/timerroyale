@@ -24,9 +24,9 @@ function driveMatch(T, matchId, side) {
   }
 }
 
-test('constants match the rulebook (game=5 rounds, match=Bo5 first-to-3)', () => {
-  assert.equal(ROUNDS_TO_WIN_GAME, 5);
-  assert.equal(GAMES_TO_WIN_MATCH, 3);
+test('constants match the Stage 1 rulebook (game=4 rounds, match=Bo3 first-to-2)', () => {
+  assert.equal(ROUNDS_TO_WIN_GAME, 4);
+  assert.equal(GAMES_TO_WIN_MATCH, 2);
 });
 
 test('starts on a semifinal', () => {
@@ -35,10 +35,10 @@ test('starts on a semifinal', () => {
   assert.equal(T.current().round, 0);
 });
 
-test('a game requires 5 ledger dots', () => {
+test('a game requires ROUNDS_TO_WIN_GAME ledger dots', () => {
   const T = four();
   const id = T.current().id;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < ROUNDS_TO_WIN_GAME - 1; i++) {
     const r = T.reportRoundWin(id, 'a');
     assert.equal(r.gameDecided, false);
   }

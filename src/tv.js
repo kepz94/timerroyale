@@ -26,8 +26,9 @@ import { fmtOff, fmtS2, fmtS, fmtSigned } from './format.js';
 
 const el = (id) => document.getElementById(id);
 const fmt = (ms) => (ms / 1000).toFixed(1);
-// TR-52 precision: Classic/Guess targets render to 2 decimals, Hard to 1.
-const fmtTarget = (g) => (g.hard ? fmt(g.targetMs) : fmtS2(g.targetMs));
+// Stage 1 precision: Classic/Hard targets ARE tenths, so they render to 1
+// decimal. (Guess targets are hundredths but never displayed as targets.)
+const fmtTarget = (g) => fmt(g.targetMs);
 // Ledger-dot strip for a game score (filled / empty out of ROUNDS_TO_WIN_GAME).
 const dots = (won, filled, empty) => filled.repeat(Math.min(won, ROUNDS_TO_WIN_GAME)) + empty.repeat(Math.max(0, ROUNDS_TO_WIN_GAME - won));
 const db = initFirebase();
@@ -46,90 +47,60 @@ let awaitingNextGame = false; // between-games: wait for the host to tap Next
 let resumeWins = null;         // one-shot: seed a resumed PvP game's score
 let resumeTeam = null;         // one-shot: seed a resumed Team game's score
 let draftState = null;
-let clockTimer = null;         // live TV clock loop (team tournaments)
-let currentScreen = null;      // for the per-round hint splash
-let hintTimer = null;
+let clockTimer = null;         // live TV clock loop (live-clock screens)
+let currentScreen = null;
 let audioCtx = null, soundOn = false; // TV audio (unlocked by the Enable-sound tap)
 let pickDeadline = 0;
 let draftClock = null;
 
-/* ---------------- Phase 1: highlight menu ---------------- */
+/* ---------------- setup: host phone config, TV mirror (Stage 1) ----------------
+   ADR-005 deleted the D-pad remote. The host configures on their PHONE with a
+   normal touch UI; the phone sends 'cfg' events carrying the whole config, the
+   TV validates, publishes it to sessions/room/config (so the stateless phone
+   re-renders from truth), and mirrors the choices on screen. */
 const config = { pool: { classic: true, hard: false, guess: false }, category: null, pveMode: 'koth', kothN: 5, numTeams: 2 };
-let stack = ['main'];
-let focus = 0;
-const pop = () => { if (stack.length > 1) { stack.pop(); focus = 0; } };
-const togglePve = () => { config.pveMode = config.pveMode === 'koth' ? 'lms' : 'koth'; };
-const cycleKoth = (d) => { const i = KOTH_THRESHOLDS.indexOf(config.kothN); config.kothN = KOTH_THRESHOLDS[Math.min(KOTH_THRESHOLDS.length - 1, Math.max(0, i + d))]; };
-
-const screens = {
-  main: () => [
-    { label: '▸ Game Pool', enter: 'pool' },
-    { label: `▸ Category${config.category ? ':  ' + config.category.toUpperCase() : ''}`, enter: 'category' },
-    { label: '▶ START GAME', onSelect: startGame }
-  ],
-  pool: () => [
-    { label: `Classic       [${config.pool.classic ? '✓' : ' '}]`, onSelect: () => (config.pool.classic = !config.pool.classic) },
-    { label: `Hard Classic  [${config.pool.hard ? '✓' : ' '}]`, onSelect: () => (config.pool.hard = !config.pool.hard) },
-    { label: `Guess Timer   [${config.pool.guess ? '✓' : ' '}]`, onSelect: () => (config.pool.guess = !config.pool.guess) },
-    { label: '◂ Back', onSelect: pop }
-  ],
-  category: () => [
-    { label: `PvE Arcade ▸${config.category === 'pve' ? '  ✓' : ''}`, onSelect: () => (config.category = 'pve'), enter: 'pve' },
-    { label: `PvP Tournament${config.category === 'pvp' ? '  ✓' : ''}`, onSelect: () => (config.category = 'pvp') },
-    { label: `Teams Tournament ▸${config.category === 'teams' ? '  ✓' : ''}`, onSelect: () => (config.category = 'teams'), enter: 'teams' },
-    { label: '◂ Back', onSelect: pop }
-  ],
-  pve: () => [
-    { label: `Mode:  ${config.pveMode === 'koth' ? 'King of the Hill' : 'Last Man Standing'}   ◀ ▶`, onLeft: togglePve, onRight: togglePve },
-    { label: `KOTH:  First to ${config.kothN}   ◀ ▶`, onLeft: () => cycleKoth(-1), onRight: () => cycleKoth(1) },
-    { label: '◂ Back', onSelect: pop }
-  ],
-  teams: () => [
-    { label: `# Teams:  ${config.numTeams}   ◀ ▶`, onLeft: () => (config.numTeams = Math.max(2, config.numTeams - 1)), onRight: () => (config.numTeams = Math.min(Math.max(2, activePlayers().length), config.numTeams + 1)) },
-    { label: '◂ Back', onSelect: pop }
-  ]
-};
-
-function onNav(dir) {
-  const items = screens[stack[stack.length - 1]]();
-  if (dir === 'up') focus = (focus - 1 + items.length) % items.length;
-  else if (dir === 'down') focus = (focus + 1) % items.length;
-  else if (dir === 'left') items[focus].onLeft?.();
-  else if (dir === 'right') items[focus].onRight?.();
-  else if (dir === 'select') { const it = items[focus]; it.onSelect?.(); if (it.enter) { stack.push(it.enter); focus = 0; } }
-  else if (dir === 'back') pop();
-  render();
-}
 
 const menuMsg = (t) => (el('tv-menu-msg').textContent = t);
+
+function publishConfig(msg = '') {
+  dbSet(dbRef(db, `sessions/${lobbyId}/config`), { ...config, msg, at: Date.now() }).catch(() => {});
+}
+
+function applyCfg(c) {
+  if (!c || typeof c !== 'object') return;
+  if (c.pool && typeof c.pool === 'object') {
+    config.pool = { classic: !!c.pool.classic, hard: !!c.pool.hard, guess: !!c.pool.guess };
+  }
+  if (['pve', 'pvp', 'teams', null].includes(c.category)) config.category = c.category;
+  if (c.pveMode === 'koth' || c.pveMode === 'lms') config.pveMode = c.pveMode;
+  if (KOTH_THRESHOLDS.includes(c.kothN)) config.kothN = c.kothN;
+  if (Number.isInteger(c.numTeams)) config.numTeams = Math.max(2, Math.min(8, c.numTeams));
+  publishConfig();
+  render();
+}
 
 function render() {
   const menu = el('tv-menu');
   if (!hostId || inGame) { menu.hidden = true; return; }
   menu.hidden = false;
-  const items = screens[stack[stack.length - 1]]();
-  if (focus >= items.length) focus = items.length - 1;
+  const pool = Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
+  const catLabel = { pve: `PvE Arcade — ${config.pveMode === 'koth' ? `King of the Hill (first to ${config.kothN})` : 'Last Man Standing'}`, pvp: 'PvP Tournament', teams: `Teams Tournament — ${config.numTeams} teams` };
+  const items = [
+    `Game pool:  ${pool.length ? pool.join(' + ') : '(none picked)'}`,
+    `Category:  ${config.category ? catLabel[config.category] : '(pick on the host phone)'}`,
+    'Host — set up the night on your phone.'
+  ];
   const list = el('tv-menu-list');
   list.innerHTML = '';
-  items.forEach((it, i) => { const li = document.createElement('li'); li.textContent = it.label; if (i === focus) li.classList.add('focused'); list.appendChild(li); });
+  items.forEach((t) => { const li = document.createElement('li'); li.textContent = t; list.appendChild(li); });
 }
 
 /* ---------------- state-screen helpers (TR-52) ---------------- */
 // Toggle the three distinct board screens. 'active' = live gameplay,
 // 'reveal' = the recorded-times card layout, 'bracket' = the between-games tree.
-// TR-52 per-round hint: a brief mode splash the moment a play screen begins.
-function showRoundHint(s) {
-  const sp = el('tv-splash'); if (!sp) return;
-  const info = s === 'hard' ? { t: 'HARD CLASSIC', h: 'Hit EXACTLY!' } : { t: 'CLASSIC', h: 'Get close!' };
-  el('splash-title').textContent = info.t;
-  el('splash-hint').textContent = info.h;
-  sp.hidden = false; sp.classList.remove('show'); void sp.offsetWidth; sp.classList.add('show');
-  clearTimeout(hintTimer);
-  hintTimer = setTimeout(() => { sp.hidden = true; sp.classList.remove('show'); }, 2000);
-}
-
+// Stage 1 (ADR-005): the 3s round-hint splash is DELETED — its job moves to
+// the Stage 2 matchup presentation.
 function showScreen(s) {
-  const entering = (s === 'active' || s === 'hard') && currentScreen !== 'active' && currentScreen !== 'hard';
   currentScreen = s;
   el('tv-active').hidden = s !== 'active';
   el('tv-reveal').hidden = s !== 'reveal';
@@ -139,7 +110,6 @@ function showScreen(s) {
   if (s !== 'bracket') el('tv-rotation').textContent = '';
   if (s === 'reveal' || s === 'hard' || s === 'bracket' || s === 'guess') el('tv-standings').hidden = true;
   if (s === 'bracket') { el('tv-ledger').hidden = true; el('tv-turn').hidden = true; }
-  if (entering) showRoundHint(s);
 }
 
 // TR-52 §5: the Hard Classic retry-loop screen — live attempt history while the
@@ -171,28 +141,44 @@ function renderHard(g, teamCtx) {
     if (w && cleanHit) chime(); else slideWhistle();
     el('hard-representing').textContent = '';
   } else {
-    const aid = g.activeId;
-    const att = g.attempts[aid] || [];
-    el('hard-head').textContent = `ACTIVE PLAYER: ${g.activeName || ''}`;
-    el('hard-sub').textContent = `Attempt #${att.length + 1} — tap to start, tap to stop`;
+    // Stage 1 RACE view: both reps attempt simultaneously; first into the zone
+    // wins instantly. Show both live clocks and both attempt histories.
+    const ids = [g.repA.playerId, g.repB.playerId];
+    el('hard-head').textContent = '🏁 RACE TO THE ZONE';
+    el('hard-sub').textContent = `First to land in the zone wins — ${ids.map((id) => `${g.players[id]?.name || ''} ${((g.attempts[id] || []).length)}/13`).join('  ·  ')}`;
     el('hard-target').innerHTML = `${target1}<span class="timer-unit">s</span>`;
     el('hard-zone').textContent = `HIT THE ZONE ${fmtS2(zoneLo)}s – ${fmtS2(zoneHi)}s`;
     const hist = el('hard-history'); hist.innerHTML = '';
-    att.forEach((a, i) => {
-      const li = document.createElement('li'); li.className = 'round-row ' + (a.hit ? 'hit' : 'dnf');
-      li.innerHTML = `<span class="row-name">${a.hit ? '🎯' : '❌'} Attempt ${i + 1}</span><span class="row-time">${fmtS2(a.elapsedMs)}s ${a.hit ? '(HIT!)' : (a.early ? '(Too Early)' : '(Too Late)')}</span>`;
-      hist.appendChild(li);
+    ids.forEach((id) => {
+      const name = g.players[id]?.name || '';
+      (g.attempts[id] || []).slice(-4).forEach((a) => {
+        const li = document.createElement('li'); li.className = 'round-row ' + (a.hit ? 'hit' : 'dnf');
+        li.innerHTML = `<span class="row-name">${a.hit ? '🎯' : '❌'} ${teamNameFor(id) || name}</span><span class="row-time">${fmtS2(a.elapsedMs)}s ${a.hit ? '(HIT!)' : (a.early ? '(Too Early)' : '(Too Late)')}</span>`;
+        hist.appendChild(li);
+      });
+      if (g.players[id]?.state === 'dnf') {
+        const li = document.createElement('li'); li.className = 'round-row dnf';
+        li.innerHTML = `<span class="row-name">${teamNameFor(id) || name}</span><span class="row-time">WASHED OUT</span>`;
+        hist.appendChild(li);
+      }
     });
-    // Live spectator clock for the current attempt (Team tournaments only).
-    const aState = g.players?.[aid]?.state, aStart = g.players?.[aid]?.startHostTs;
     const hc = el('hard-clock');
     if (hc) {
-      if (teamCtx && aState === 'running' && aStart) { hc.hidden = false; hc.setAttribute('data-clock-start', aStart); hc.textContent = '0.00s'; startClockLoop(); }
-      else { hc.hidden = true; hc.removeAttribute('data-clock-start'); stopClockLoop(); }
+      hc.hidden = false;
+      hc.removeAttribute('data-clock-start');
+      hc.style.fontSize = 'clamp(1.6rem, 4vw, 4rem)';
+      hc.innerHTML = ids.map((id) => {
+        const p = g.players[id] || {};
+        const t = p.state === 'running' && p.startHostTs
+          ? `<span data-clock-start="${p.startHostTs}">0.00s</span>`
+          : p.state === 'dnf' ? 'washed' : '—';
+        return `<span style="margin:0 1.2rem">${p.name || ''}: ${t}</span>`;
+      }).join('');
+      startClockLoop();
     }
     el('hard-winner').textContent = '';
     el('hard-representing').textContent = teamCtx
-      ? `Representing: ${teamNameFor(aid)}   ·   Up next: ${aid === teamCtx.activeA.playerId ? teamCtx.teamB.name : teamCtx.teamA.name}`
+      ? `${teamCtx.teamA.name}: ${teamCtx.activeA.name}   vs   ${teamCtx.teamB.name}: ${teamCtx.activeB.name}`
       : '';
   }
 }
@@ -282,6 +268,7 @@ function slideWhistle() {
   o.start(t); o.stop(t + 0.55);
 }
 let lastGuessedCount = 0; // to fire a latch only on a NEW lock-in
+let guessRevealTimer = null, guessRevealKey = null; // reversed-reveal sequencing
 function enableSound() {
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -310,24 +297,43 @@ function renderGuess(g, teamCtx) {
     : 'GUESS THE CLOCK';
   const actual = el('guess-actual'), cards = el('guess-cards');
   if (g.status === 'over') {
-    el('guess-head').textContent = 'THE REVEAL';
-    actual.hidden = false;
-    actual.innerHTML = `ACTUAL ${fmtS(g.actualMs)}<span class="timer-unit">s</span>`;
-    cards.innerHTML = '';
-    ids.forEach((id, i) => {
-      const s = g.players[id];
-      const isWin = g.winner && g.winner.playerId === id;
-      const guess = s.guessMs != null ? `${fmtS2(s.guessMs)}s` : '0.00s';
-      const dev = s.guessMs != null ? `DEVIATION ${fmtSigned(s.guessMs - g.actualMs)}s` : 'no guess';
-      const card = document.createElement('div');
-      card.className = 'reveal-card' + (isWin ? ' win' : '');
-      card.innerHTML = `<div class="rc-team">${labelFor(id, i)}</div><div class="rc-name">${s.name}</div><div class="rc-time">${guess}</div><div class="rc-dev">${dev}</div>`;
-      cards.appendChild(card);
-    });
-    el('guess-winner').textContent = g.winner ? `🏆 ${labelFor(g.winner.playerId, ids.indexOf(g.winner.playerId))} wins the round! (+1)` : 'No winner';
-    lastGuessedCount = 0;
-    drumroll(); // cinematic reveal (ends on a chime)
+    // Stage 1 (ADR-005): the reveal order is REVERSED — guesses show first,
+    // the actual time lands last.
+    const key = `${g.actualMs}:${ids.map((id) => g.players[id].guessMs).join(',')}`;
+    const drawCards = (withDev) => {
+      cards.innerHTML = '';
+      ids.forEach((id, i) => {
+        const s = g.players[id];
+        const isWin = withDev && g.winner && g.winner.playerId === id;
+        const guess = s.guessMs != null ? `${fmtS2(s.guessMs)}s` : '0.00s';
+        const dev = withDev
+          ? (s.guessMs != null ? `DEVIATION ${fmtSigned(s.guessMs - g.actualMs)}s` : 'no guess')
+          : '';
+        const card = document.createElement('div');
+        card.className = 'reveal-card' + (isWin ? ' win' : '');
+        card.innerHTML = `<div class="rc-team">${labelFor(id, i)}</div><div class="rc-name">${s.name}</div><div class="rc-time">${guess}</div><div class="rc-dev">${dev}</div>`;
+        cards.appendChild(card);
+      });
+    };
+    if (guessRevealKey !== key) {
+      guessRevealKey = key;
+      el('guess-head').textContent = 'THE GUESSES ARE IN';
+      actual.hidden = true;
+      drawCards(false);
+      el('guess-winner').textContent = '…and the actual time was…';
+      lastGuessedCount = 0;
+      clearTimeout(guessRevealTimer);
+      guessRevealTimer = setTimeout(() => {
+        el('guess-head').textContent = 'THE REVEAL';
+        actual.hidden = false;
+        actual.innerHTML = `ACTUAL ${fmtS2(g.actualMs)}<span class="timer-unit">s</span>`;
+        drawCards(true);
+        el('guess-winner').textContent = g.winner ? `🏆 ${labelFor(g.winner.playerId, ids.indexOf(g.winner.playerId))} wins the round! (+1)` : 'No winner';
+        drumroll(); // cinematic reveal (ends on a chime)
+      }, 2200);
+    }
   } else if (g.status === 'guessing') {
+    guessRevealKey = null; clearTimeout(guessRevealTimer);
     el('guess-head').textContent = '🚨 TIME IS UP — SUBMIT YOUR GUESS!';
     actual.hidden = true;
     cards.innerHTML = '';
@@ -345,6 +351,7 @@ function renderGuess(g, teamCtx) {
     el('guess-winner').textContent = '';
   } else { // ready | get-ready | interval
     lastGuessedCount = 0;
+    guessRevealKey = null; clearTimeout(guessRevealTimer);
     el('guess-head').textContent = g.status === 'interval' ? '⏱️ TIMER RUNNING — clock hidden!' : 'GET READY…';
     actual.hidden = true;
     cards.innerHTML = '';
@@ -383,14 +390,18 @@ function renderReveal(contenders, winnerId) {
 /* ---------------- launch ---------------- */
 const activePlayers = () => players.filter((p) => p.connected !== false).map(({ playerId, name, members }) => ({ playerId, name, members }));
 
+// Setup problems surface BOTH on the TV and on the host phone (via the
+// published config's msg field) — the phone is where the host is looking.
+const setupMsg = (t) => { menuMsg(t); publishConfig(t); };
+
 function startGame() {
   const pool = Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
   const pc = activePlayers().length;
   const pv = validatePool(ENVIRONMENTS.PARTY, pool);
-  if (!pv.ok) return menuMsg(pv.reason);
-  if (!config.category) return menuMsg('Pick a category first.');
+  if (!pv.ok) return setupMsg(pv.reason);
+  if (!config.category) return setupMsg('Pick a category first.');
   const cv = validateCategory(config.category, pc);
-  if (!cv.ok) return menuMsg(cv.reason);
+  if (!cv.ok) return setupMsg(cv.reason);
   if (config.category === 'pve') return launchPve();
   if (config.category === 'pvp') return launchPvp();
   if (config.category === 'teams') return launchTeams();
@@ -472,7 +483,7 @@ function nextTourneyGame() {
   persistTournament();
   const gf = tourney.isGrandFinals();
   renderBracket(); // shows the bracket screen
-  el('tv-match-banner').textContent = gf ? '🏆 GRAND FINALS — BEST OF 5' : 'TOURNAMENT BRACKET — BEST OF 5';
+  el('tv-match-banner').textContent = gf ? '🏆 GRAND FINALS — BEST OF 3' : 'TOURNAMENT BRACKET — BEST OF 3';
   el('tv-rotation').textContent = `Next up: ${curMatch.a.name} vs ${curMatch.b.name} — first to ${ROUNDS_TO_WIN_GAME} takes the game`;
   el('tv-game-msg').classList.remove('final');
   el('tv-game-msg').textContent = 'Host — tap Next on your phone to start this game.';
@@ -625,11 +636,35 @@ function renderTeamRound(g, ctx) {
 function renderRound(g) {
   if (g.mode === 'hard') { renderHard(g, null); return; }
   if (g.mode === 'guess') { renderGuess(g, null); return; }
-  if (el('tv-clocks')) el('tv-clocks').hidden = true; // live clocks are Team-only
-  stopClockLoop();
   const ids = Object.keys(g.players);
   const duel = ids.length === 2;
-  if (g.status === 'running') {
+  if (!(duel && g.status === 'running')) {
+    if (el('tv-clocks')) el('tv-clocks').hidden = true;
+    stopClockLoop();
+  }
+  if (g.status === 'running' && duel) {
+    // Stage 1 simultaneous Classic (ADR-005): the TV shows BOTH running clocks
+    // and each result freezes live the moment that player stops. Phones stay
+    // blind — the room watches the race on the board.
+    showScreen('active');
+    el('tv-target-label').hidden = false;
+    el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
+    el('tv-turn').hidden = true;
+    el('tv-round-rows').innerHTML = '';
+    const clk = el('tv-clocks'); clk.hidden = false;
+    clk.innerHTML = ids.map((id) => {
+      const s = g.players[id];
+      let cls = '', time;
+      if (s.state === 'running' && s.startHostTs) { cls = 'running'; time = `<span class="lc-time" data-clock-start="${s.startHostTs}">0.00s</span>`; }
+      else if (s.state === 'stopped') { cls = 'stopped'; time = `<span class="lc-time">${fmtS2(s.elapsedMs)}s</span>`; }
+      else if (s.state === 'dnf') { cls = 'dnf'; time = '<span class="lc-time">DNF</span>'; }
+      else { time = '<span class="lc-time">—</span>'; }
+      return `<div class="live-clock ${cls}"><div class="lc-team"></div><div class="lc-name">${s.name}</div>${time}</div>`;
+    }).join('');
+    startClockLoop();
+    el('tv-game-msg').classList.remove('final');
+    el('tv-game-msg').textContent = 'Timing blind on the phones — the room sees the clocks!';
+  } else if (g.status === 'running') {
     showScreen('active');
     el('tv-target-label').hidden = false;
     el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
@@ -731,6 +766,9 @@ async function boot() {
     list.forEach((p) => { const li = document.createElement('li'); li.textContent = (hostId === p.playerId ? '⭐ ' : '') + (p.connected === false ? `⚠ ${p.name}` : p.name); li.classList.toggle('offline', p.connected === false); ul.appendChild(li); });
     el('players-empty').hidden = list.length > 0;
     if (!inGame) el('status').textContent = list.length ? `${list.length} in the lobby${hostId ? '' : ' — waiting for a signed-in host'}` : 'Waiting for players…';
+    // Keep the published config fresh so the host phone always has truth to
+    // render its touch setup UI from (stateless-phone principle).
+    if (!inGame && hostId) publishConfig();
     render();
   });
   consumeEvents(db, lobbyId, (ev) => {
@@ -740,7 +778,8 @@ async function boot() {
       if (ev.type === 'team-emoji' && ev.emoji) { const t = draftState.teams.find((x) => x.captainId === ev.playerId); if (t) { t.emoji = ev.emoji; publishDraft(false); renderDraft(); } return; }
       if (ev.type === 'draft-done' && ev.playerId === hostId && draftState.status === 'naming') { finalizeDraft(); return; }
     }
-    if (ev.type === 'nav' && !inGame && ev.playerId === hostId && ev.dir) { onNav(ev.dir); return; }
+    if (ev.type === 'cfg' && !inGame && ev.playerId === hostId && ev.config) { applyCfg(ev.config); return; }
+    if (ev.type === 'startgame' && !inGame && ev.playerId === hostId) { startGame(); return; }
     if ((ev.type === 'press' || ev.type === 'guess') && engine) { engine.handleEvent(ev); return; }
     if (ev.type === 'next' && !engine && awaitingNextGame && ev.playerId === hostId) { awaitingNextGame = false; if (isTeams) startTeamMatch(); else startBracketGame(); return; }
     if (ev.type === 'next' && engine && ev.playerId === hostId && engine.isBetween()) { engine.nextRound(); return; }

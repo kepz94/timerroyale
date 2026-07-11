@@ -22,16 +22,16 @@ test('classic outcome: single stopped wins, none = null', () => {
   assert.equal(classicOutcome([]).winnerId, null);
 });
 
-test('20s hard cutoff classifies DNF', () => {
-  assert.equal(CLASSIC_CUTOFF_MS, 20000);
-  assert.equal(isCutoffDnf(20000), true);
-  assert.equal(isCutoffDnf(20500), true);
-  assert.equal(isCutoffDnf(19990), false);
+test('30s idle cutoff classifies DNF (Stage 1: 30.00s in all modes)', () => {
+  assert.equal(CLASSIC_CUTOFF_MS, 30000);
+  assert.equal(isCutoffDnf(30000), true);
+  assert.equal(isCutoffDnf(30500), true);
+  assert.equal(isCutoffDnf(29990), false);
   assert.equal(isCutoffDnf(null), true);
 });
 
 test('guess window + default', () => {
-  assert.equal(GUESS_WINDOW_MS, 15000);
+  assert.equal(GUESS_WINDOW_MS, 30000);
   assert.equal(guessDefaultMs(), 0);
 });
 

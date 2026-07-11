@@ -8,11 +8,13 @@ import { logTransition } from './session.js';
 export const GUESS_MIN_MS = 1000;
 export const GUESS_MAX_MS = 8000;
 export const GET_READY_MS = 2500;
-export const GUESS_WINDOW_MS = 15000; // TR-52: 15-second submission window
+export const GUESS_WINDOW_MS = 30000; // Stage 1: 30s idle rule in all modes
 
+// Stage 1 precision (ADR-005): Guess targets live at HUNDREDTHS so the keypad
+// input precision matches the target precision (reverses the Jul 9 tenths snap).
 export function randomGuessTarget() {
   const ms = GUESS_MIN_MS + Math.random() * (GUESS_MAX_MS - GUESS_MIN_MS);
-  return Math.round(ms / 100) * 100;
+  return Math.round(ms / 10) * 10;
 }
 
 export function createGuessRound({ db, room, players, targetMs, onTv, onMoment }) {
@@ -86,7 +88,7 @@ export function createGuessRound({ db, room, players, targetMs, onTv, onMoment }
       onTv?.state(publicState());
       logTransition('guess', 'get-ready', 'interval', 'start cue fired');
       setTimeout(() => {
-        actualMs = Math.round((performance.now() - t0) / 100) * 100; // measured, snapped to 0.1s
+        actualMs = Math.round((performance.now() - t0) / 10) * 10; // measured, at hundredths (Stage 1)
         onMoment?.('stop');
         status = 'guessing';
         publish();
