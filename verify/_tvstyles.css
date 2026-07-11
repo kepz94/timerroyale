@@ -228,6 +228,9 @@
       @keyframes slamIn { from { transform: scale(1.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
       @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
+      /* Hill line / standings pills at couch size */
+      #tv-standings .standing { font-size: clamp(1rem, 1.8vw, 1.9rem); padding: .45rem 1.3rem; }
+
       /* First-play tutorial: one wide amber-framed card per step, host-paced */
       .reveal-card.tutorial-card { flex: 0 1 min(64rem, 86vw); max-width: 86vw;
         border-color: var(--target); box-shadow: 0 0 34px rgb(240 180 41 / .25); }

@@ -282,6 +282,18 @@
             `<div class="reveal-card"><div class="rc-team">SHARKNADOOOOOOOS</div><div class="rc-name">${LONGP[1]}</div><div class="rc-time">12.00s</div><div class="rc-dev">DEVIATION +3.13s</div></div>`;
           el('guess-winner').textContent = '🏆 THUNDERDOMES wins the round! (+1)';
         },
+        hill() {
+          showGame();
+          el('tv-standings').hidden = false;
+          el('tv-match-banner').innerHTML = '<span class="tv-words">👑 KING OF THE HILL — FIRST TO 7</span>';
+          const st = el('tv-standings');
+          const meter = (w) => '●'.repeat(w) + '○'.repeat(7 - w);
+          const row = (txt, cls) => { const li = document.createElement('li'); li.className = 'standing ' + cls; li.textContent = txt; st.appendChild(li); };
+          row(`👑 ${LONGP[0]} — holds the hill  ${meter(6)}`, 'alive');
+          row(`🥊 ${LONGP[1]} — steps up  ${meter(3)}`, 'alive');
+          LONGP.slice(2).forEach((p, i) => row(`#${i + 1} in line — ${p}  ${meter(i % 5)}`, 'queued'));
+          el('tv-game-msg').textContent = `${LONGP[0]} stays on! Host — tap Next to start the duel.`;
+        },
         tutorial() {
           showGame(); show('tv-reveal');
           el('tv-match-banner').innerHTML = '<span class="tv-words">📖 HARD CLASSIC — HOW TO WIN</span>';

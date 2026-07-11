@@ -102,8 +102,8 @@ function renderHostConfig(show) {
   document.querySelectorAll('#host-config [data-cat]').forEach((b) => b.classList.toggle('hc-on', c.category === b.dataset.cat));
   const pve = el('hc-pve'); if (pve) pve.hidden = c.category !== 'pve';
   const tms = el('hc-teams'); if (tms) tms.hidden = c.category !== 'teams';
-  if (el('hc-pve-mode')) el('hc-pve-mode').textContent = c.pveMode === 'koth' ? `King of the Hill — first to ${c.kothN}` : 'Last Man Standing';
-  if (el('hc-koth-n')) { el('hc-koth-n').hidden = c.pveMode !== 'koth'; el('hc-koth-n').textContent = `First to: ${c.kothN} (tap to cycle)`; }
+  if (el('hc-pve-mode')) el('hc-pve-mode').textContent = c.pveMode === 'koth' ? 'King of the Hill — winner stays on, first to 7' : 'Last Man Standing';
+  if (el('hc-koth-n')) el('hc-koth-n').hidden = true; // the hill rule is fixed: first to 7
   if (el('hc-teams-count')) el('hc-teams-count').textContent = String(c.numTeams || 2);
   if (el('hc-msg')) el('hc-msg').textContent = c.msg || '';
 }
@@ -393,8 +393,19 @@ function renderPhase() {
     else if (presentMode) banner.textContent = calledUp
       ? (readySent ? '✓ Ready — wait for your opponent…' : "📣 YOU'RE UP! Stand, face AWAY from the TV, tap I'M READY.")
       : '👀 Matchup on the TV — next round is being called.';
-    else if (phase === 'active') banner.textContent = inThisRound ? '⏱ Tap to start, tap to stop — time it blind!' : '👀 Watching — you\'re up soon!';
-    else if (phase === 'intermission') banner.textContent = iAmHost ? 'Round over — tap Next when ready.' : 'Round over — waiting for the host…';
+    else if (phase === 'active' || phase === 'intermission') {
+      // King of the Hill: the phone narrates YOUR place in the line.
+      const hillQ = matchState?.type === 'hill' ? (matchState.queue || []) : null;
+      const hillPos = hillQ ? hillQ.findIndex((p) => p.playerId === me.playerId) + 1 : 0;
+      const onDeck = matchState?.type === 'hill' && (matchState.active || []).some((p) => p.playerId === me.playerId);
+      if (phase === 'active') banner.textContent = inThisRound ? '⏱ Tap to start, tap to stop — time it blind!'
+        : hillPos ? `🧗 You're #${hillPos} in line — winner stays on!`
+        : '👀 Watching — you\'re up soon!';
+      else banner.textContent = iAmHost ? 'Round over — tap Next when ready.'
+        : onDeck ? '🥊 You\'re in the next duel — get ready!'
+        : hillPos ? `🧗 You're #${hillPos} in line — winner stays on!`
+        : 'Round over — waiting for the host…';
+    }
     else if (phase === 'over') banner.textContent = '🏆 Game over — check the TV!';
     else if (iAmHost) banner.textContent = '⭐ You are the HOST — set up the night below; the TV mirrors your choices.';
     else if (host) banner.textContent = `Host: ${host.name}. Waiting for the game to start…`;

@@ -159,6 +159,7 @@ h1 { font-size: var(--fs-title); letter-spacing: 0.05em; }
 .standing { padding: 0.35rem 1rem; border-radius: var(--radius-round); font-size: var(--fs-small); }
 .standing.alive { background: var(--surface-raised); color: var(--state-alive); }
 .standing.out { background: transparent; color: var(--state-eliminated); text-decoration: line-through; opacity: 0.7; }
+.standing.queued { background: transparent; color: var(--text-dim); } /* in line, not out */
 
 /* ---- TR-7: teams ---- */
 .team-toggle { color: var(--text-dim); font-size: var(--fs-small); display: flex; gap: 0.5rem; align-items: center; }

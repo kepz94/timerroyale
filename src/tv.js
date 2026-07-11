@@ -88,7 +88,7 @@ function render() {
   if (!hostId || inGame) { menu.hidden = true; return; }
   menu.hidden = false;
   const pool = Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
-  const catLabel = { pve: `PvE Arcade — ${config.pveMode === 'koth' ? `King of the Hill (first to ${config.kothN})` : 'Last Man Standing'}`, pvp: 'PvP Tournament', teams: `Teams Tournament — ${config.numTeams} TEAMS` };
+  const catLabel = { pve: `PvE Arcade — ${config.pveMode === 'koth' ? 'King of the Hill (winner stays on, first to 7)' : 'Last Man Standing'}`, pvp: 'PvP Tournament', teams: `Teams Tournament — ${config.numTeams} TEAMS` };
   // Config mirror (spec A2): every choice the host makes lands here, bolded,
   // the moment it lands — the phone taps must visibly change the TV.
   const items = [
@@ -641,16 +641,120 @@ function showGame(on) {
 
 /* ---- PvE ---- */
 function launchPve() {
-  const hard = !!config.pool.hard;
+  if (config.pveMode === 'koth') return launchHill();
   const roster = activePlayers();
   showGame(true);
-  el('tv-match-banner').textContent = config.pveMode === 'koth' ? `King of the Hill — first to ${config.kothN}${hard ? ' 🔥' : ''}` : 'Last Man Standing';
-  engine = config.pveMode === 'koth'
-    ? createKoth({ db, room: lobbyId, players: roster, n: config.kothN, hard, onTv: { state: renderRound }, onMatch: renderKoth })
-    : createElim({ db, room: lobbyId, players: roster, onTv: { state: renderRound }, onMatch: renderElim });
-  logTransition('tv', 'setup', 'pve-launch', `${config.pveMode} players=${roster.length}`);
-  // PvE rounds are classic mechanics (the hard flag only tightens targets).
+  el('tv-match-banner').textContent = 'Last Man Standing';
+  engine = createElim({ db, room: lobbyId, players: roster, onTv: { state: renderRound }, onMatch: renderElim });
+  logTransition('tv', 'setup', 'pve-launch', `lms players=${roster.length}`);
+  // LMS rounds are classic mechanics.
   runTutorial('classic', () => beginRound());
+}
+
+/* ---- King of the Hill (kepu spec Jul 11): two random players open the
+   night, everyone else forms THE LINE. Winner stays on, loser rejoins the
+   back of the line; first to 7 TOTAL round wins (not consecutive) is crowned
+   King. Every duel runs on the full duel machinery — matchup presentation,
+   dual ready-up, live clocks, reveals, first-play tutorials — as a
+   first-to-1 koth game with this orchestrator on top. ---- */
+const HILL_WINS = 7;
+let hill = null; // { active:[a,b], queue:[...], wins:{pid:n}, target }
+
+function launchHill() {
+  const roster = [...activePlayers()].sort(() => Math.random() - 0.5)
+    .map((p) => ({ playerId: p.playerId, name: p.name }));
+  if (roster.length < 2) return setupMsg('King of the Hill needs at least 2 players.');
+  isTeams = false; tourney = null; bracket = null;
+  hill = { active: [roster[0], roster[1]], queue: roster.slice(2), wins: {}, target: HILL_WINS };
+  showGame(true);
+  logTransition('tv', 'setup', 'hill-launch', `${roster.length} players`);
+  (async () => {
+    await titleCard({ kicker: 'Tonight', title: 'KING OF THE HILL', hint: `Winner stays on — first to ${HILL_WINS} wins takes the crown`, tone: 'target' });
+    startHillDuel();
+  })();
+}
+
+function publishHill(status) {
+  if (!hill) return;
+  dbSet(dbRef(db, `sessions/${lobbyId}/match`), {
+    type: 'hill', status,
+    active: hill.active, queue: hill.queue, wins: hill.wins, target: hill.target,
+  }).catch(() => {});
+}
+
+function startHillDuel() {
+  publishHill('playing');
+  const pool = Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
+  engine = createKoth({
+    db, room: lobbyId, players: hill.active, n: 1,
+    roundKindFn: () => nextKind || resolveMode(pool), deadHeatVoid: true,
+    perPlayerStopMs: 30000, targetFn: createClassicTargets(), onMoment: flashCue,
+    onTv: { state: renderRound }, onMatch: onHillDuel,
+  });
+  beginRound();
+}
+
+function onHillDuel(m) {
+  if (m.tieVoid) { el('tv-game-msg').classList.remove('final'); el('tv-game-msg').textContent = '🟰 DEAD HEAT — new target…'; return; }
+  if (m.status !== 'king' || !hill) return;
+  const winner = hill.active.find((p) => p.playerId === m.king.playerId);
+  const loser = hill.active.find((p) => p.playerId !== m.king.playerId);
+  hill.wins[winner.playerId] = (hill.wins[winner.playerId] || 0) + 1;
+  engine = null;
+  if (hill.wins[winner.playerId] >= hill.target) {
+    publishHill('king');
+    setTimeout(() => crownKing(winner), 2600); // let the round reveal breathe
+    return;
+  }
+  hill.queue.push(loser);
+  hill.active = [winner, hill.queue.shift()];
+  publishHill('between');
+  setTimeout(() => {
+    if (!hill) return;
+    renderHillIntermission(winner);
+    awaitingNextGame = true; // host paces the next duel
+  }, 2600);
+}
+
+// The line, between duels: holder on top with a win meter, challenger called
+// up, everyone else numbered in queue order.
+function renderHillIntermission(winner) {
+  stopClockLoop();
+  ['tv-active', 'tv-reveal', 'tv-hard', 'tv-guess', 'tv-wheel', 'tv-draft', 'tv-bracket'].forEach((id) => { el(id).hidden = true; });
+  el('tv-ledger').hidden = true; el('tv-turn').hidden = true;
+  el('tv-standings').hidden = false;
+  el('tv-match-banner').innerHTML = `<span class="tv-words">👑 KING OF THE HILL — FIRST TO ${hill.target}</span>`;
+  const meter = (pid) => '●'.repeat(hill.wins[pid] || 0) + '○'.repeat(Math.max(0, hill.target - (hill.wins[pid] || 0)));
+  const st = el('tv-standings'); st.innerHTML = '';
+  const row = (txt, cls) => { const li = document.createElement('li'); li.className = `standing ${cls}`; li.textContent = txt; st.appendChild(li); };
+  row(`👑 ${hill.active[0].name} — holds the hill  ${meter(hill.active[0].playerId)}`, 'alive');
+  row(`🥊 ${hill.active[1].name} — steps up  ${meter(hill.active[1].playerId)}`, 'alive');
+  hill.queue.forEach((p, i) => row(`#${i + 1} in line — ${p.name}  ${meter(p.playerId)}`, 'queued'));
+  el('tv-game-msg').classList.remove('final');
+  el('tv-game-msg').textContent = `${winner.name} stays on! Host — tap Next to start the duel.`;
+}
+
+// First to 7: the crown is a produced moment, then the rematch menu.
+async function crownKing(w) {
+  stopClockLoop();
+  await titleCard({ kicker: 'The hill is taken', title: 'WE HAVE A KING', hint: `${hill.target} wins — the line never got there`, tone: 'gold' });
+  showScreen('reveal');
+  el('tv-ledger').hidden = true;
+  el('tv-match-banner').innerHTML = '<span class="tv-words">👑 KING OF THE HILL 👑</span>';
+  el('reveal-head').innerHTML = '<span style="font-size:2.2em;line-height:1">👑</span>';
+  el('reveal-sub').innerHTML = `<span class="tv-words" style="font-size:1.6em;color:var(--win)">${w.name}</span>`;
+  const wrap = el('reveal-cards'); wrap.innerHTML = '';
+  const c = document.createElement('div');
+  c.className = 'reveal-card win';
+  c.innerHTML = `<div class="rc-ava">${(w.name[0] || '?').toUpperCase()}</div><div class="rc-name">${w.name}</div><div class="rc-dev">${tonightLine(night, w.playerId) || ''}</div>`;
+  wrap.appendChild(c);
+  el('reveal-winner').textContent = `${hill.target} round wins — the hill belongs to ${w.name}`;
+  el('tv-game-msg').classList.add('final');
+  el('tv-game-msg').textContent = 'Host — tap Next for the rematch menu.';
+  confettiBurst();
+  drumroll();
+  awaitingEndNight = 'champion';
+  dbSet(dbRef(db, `sessions/${lobbyId}/game`), { mode: 'awards', status: 'champion', updatedAt: Date.now() }).catch(() => {});
 }
 
 /* ---- PvP single-elim tournament: every player for themselves. Inherits the
@@ -1117,16 +1221,6 @@ function renderRound(g) {
   }
 }
 
-function renderKoth(m, pvp = false) {
-  if (pvp) return; // PvP uses onPvpGame + the bracket
-  el('tv-bracket').hidden = true; el('tv-standings').hidden = false;
-  el('tv-match-banner').textContent = m.status === 'king' ? '👑 WE HAVE A KING 👑' : `King of the Hill — first to ${m.n} (round ${m.roundNum})${m.hard ? ' 🔥' : ''}`;
-  const st = el('tv-standings');
-  st.innerHTML = '';
-  (m.tally || []).forEach((t) => { const li = document.createElement('li'); li.className = 'standing alive'; li.textContent = `${t.name} — ${t.wins}/${m.n}${'👑'.repeat(t.wins)}`; st.appendChild(li); });
-  if (m.status === 'king') { el('tv-game-msg').classList.add('final'); el('tv-game-msg').textContent = `👑 ${m.king.name} is the King of the Hill!`; }
-}
-
 function renderElim(m) {
   el('tv-bracket').hidden = true; el('tv-standings').hidden = false;
   el('tv-match-banner').textContent = m.status === 'champion' ? '👑 CHAMPION 👑' : `Last Man Standing — round ${m.roundNum}`;
@@ -1263,7 +1357,7 @@ function showEndNightChoice() {
 }
 
 function backToLobby(msg) {
-  engine = null; tourney = null; bracket = null; curMatch = null;
+  engine = null; tourney = null; bracket = null; curMatch = null; hill = null;
   draftState = null; awaitingNextGame = false; awaitingEndNight = null;
   dbSet(dbRef(db, `sessions/${lobbyId}/match`), null).catch(() => {});
   dbSet(dbRef(db, `sessions/${lobbyId}/game`), null).catch(() => {});
@@ -1329,7 +1423,7 @@ async function boot() {
     if (ev.type === 'next' && awaitingEndNight === 'champion' && ev.playerId === hostId) { showEndNightChoice(); return; }
     if (ev.type === 'endnight-choice' && awaitingEndNight === 'choice' && ev.playerId === hostId && ev.choice) { onEndNightChoice(ev.choice); return; }
     if ((ev.type === 'press' || ev.type === 'guess') && engine) { engine.handleEvent(ev); return; }
-    if (ev.type === 'next' && !engine && awaitingNextGame && ev.playerId === hostId) { awaitingNextGame = false; if (isTeams) startTeamMatch(); else startBracketGame(); return; }
+    if (ev.type === 'next' && !engine && awaitingNextGame && ev.playerId === hostId) { awaitingNextGame = false; if (hill) startHillDuel(); else if (isTeams) startTeamMatch(); else startBracketGame(); return; }
     if (ev.type === 'next' && presenting && ev.playerId === hostId) { firePresented('host force-start'); return; }
     if (ev.type === 'next' && engine && ev.playerId === hostId && engine.isBetween()) { beginRound(); return; }
   });
@@ -1350,7 +1444,14 @@ async function boot() {
   } catch { /* fresh lobby */ }
   try {
     const m = (await dbGet(dbRef(db, `sessions/${lobbyId}/match`))).val();
-    if (m && m.snapshot && m.snapshot.entrants && m.status !== 'complete') {
+    if (m && m.type === 'hill' && m.status !== 'king' && Array.isArray(m.active)) {
+      // Resume King of the Hill: the line + win meters survive a TV reload;
+      // the interrupted duel restarts fresh (matches the resume pattern).
+      hill = { active: m.active, queue: m.queue || [], wins: m.wins || {}, target: m.target || HILL_WINS };
+      showGame(true);
+      logTransition('tv', 'boot', 'resumed', 'hill restored');
+      startHillDuel();
+    } else if (m && m.snapshot && m.snapshot.entrants && m.status !== 'complete') {
       isTeams = !!m.teams; config.pool.hard = !!m.hard;
       tourney = restoreTournament(m.snapshot);
       bracket = tourney.bracket;
