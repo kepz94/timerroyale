@@ -114,6 +114,12 @@ export function createTeamGame({ db, room, teamA, teamB, n = 3, hard = false, on
     nextRound,
     handleEvent: (ev) => currentRound?.handleEvent(ev),
     isBetween: () => status === 'between',
-    isOver: () => status === 'over'
+    isOver: () => status === 'over',
+    // Stage 2 (TR-56): who plays the NEXT round — lets the TV present the
+    // matchup and collect dual ready-up BEFORE the round engine fires.
+    peekReps: () => ({
+      a: activeMember(teamA, roundNum),
+      b: activeMember(teamB, roundNum),
+    }),
   };
 }

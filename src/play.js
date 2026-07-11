@@ -91,9 +91,21 @@ function renderHostConfig(show) {
   if (el('hc-teams-count')) el('hc-teams-count').textContent = String(c.numTeams || 2);
   if (el('hc-msg')) el('hc-msg').textContent = c.msg || '';
 }
+let readySent = false; // dual ready-up (Stage 2): one READY per presentation
+
 el('big-press').addEventListener('pointerdown', (e) => {
   e.preventDefault();
-  if (!me || gameState?.status !== 'running') return;
+  if (!me) return;
+  // Matchup presentation: the big button IS the ready-up control.
+  if (gameState?.mode === 'present') {
+    if (readySent || !gameState.players?.[me.playerId]) return;
+    readySent = true;
+    sendEvent(db, code, me.playerId, 'ready');
+    if (navigator.vibrate) navigator.vibrate(30);
+    renderPhase();
+    return;
+  }
+  if (gameState?.status !== 'running') return;
   const st = gameState.players?.[me.playerId]?.state;
   if (st !== 'waiting' && st !== 'running') return;
   const btn = el('big-press');
@@ -222,15 +234,23 @@ function renderPhase() {
   const host = hostPlayer();
   const iAmHost = host && me && host.playerId === me.playerId;
   const guessMode = gameState?.mode === 'guess';
+  const presentMode = gameState?.mode === 'present';
+  if (!presentMode && readySent) readySent = false; // reset for the next matchup
   const active = guessMode ? (gameState.status && gameState.status !== 'over') : (gameState?.status === 'running');
   const over = ['king', 'champion'].includes(matchState?.status);
   const inMatch = matchState != null;
   const phase = over ? 'over' : active ? 'active' : inMatch ? 'intermission' : 'setup';
 
   renderHostConfig(iAmHost && phase === 'setup');
+  const calledUp = presentMode && me && gameState?.players && gameState.players[me.playerId];
   const inThisRound = phase === 'active' && me && gameState?.players && gameState.players[me.playerId];
-  if (el('big-press')) el('big-press').hidden = !inThisRound || guessMode;
-  if (inThisRound && !guessMode) {
+  if (el('big-press')) el('big-press').hidden = calledUp ? false : (!inThisRound || guessMode);
+  if (calledUp) {
+    const btn = el('big-press'); const lbl = el('big-press-label');
+    btn.classList.remove('running');
+    btn.disabled = readySent;
+    if (lbl) lbl.textContent = readySent ? 'READY ✓' : "I'M READY";
+  } else if (inThisRound && !guessMode) {
     const st = gameState.players?.[me.playerId]?.state;
     const btn = el('big-press'); const lbl = el('big-press-label');
     if (st === 'running') { btn.classList.add('running'); btn.disabled = false; if (lbl) lbl.textContent = 'TAP TO STOP'; }
@@ -246,6 +266,9 @@ function renderPhase() {
   const banner = el('turn-banner');
   if (banner && !(guessMode && phase === 'active')) {
     if (!me) banner.textContent = '';
+    else if (presentMode) banner.textContent = calledUp
+      ? (readySent ? '✓ Ready — wait for your opponent…' : "📣 YOU'RE UP! Stand, face AWAY from the TV, tap I'M READY.")
+      : '👀 Matchup on the TV — next round is being called.';
     else if (phase === 'active') banner.textContent = inThisRound ? '⏱ Tap to start, tap to stop — time it blind!' : '👀 Watching — you\'re up soon!';
     else if (phase === 'intermission') banner.textContent = iAmHost ? 'Round over — tap Next when ready.' : 'Round over — waiting for the host…';
     else if (phase === 'over') banner.textContent = '🏆 Game over — check the TV!';

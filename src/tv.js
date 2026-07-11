@@ -390,6 +390,77 @@ function renderReveal(contenders, winnerId) {
 /* ---------------- launch ---------------- */
 const activePlayers = () => players.filter((p) => p.connected !== false).map(({ playerId, name, members }) => ({ playerId, name, members }));
 
+/* ---------------- Stage 2 (TR-56): matchup presentation + dual ready-up ----
+   Spec B1: before every party round the TV calls the two players to stand
+   facing away, presents the matchup (mode + objective — this absorbed the old
+   hint splash), and the round fires only when BOTH standing players tap READY
+   on their phones. The presentation holds a minimum 6s beat. The host's Next
+   acts as a force-start escape hatch if someone wanders off. */
+let presenting = null; // { reps, ready:Set, t0, fired }
+let nextKind = null;   // mode resolved AT presentation time so the TV can announce it
+
+const KIND_LABEL = {
+  classic: ['CLASSIC', 'Land closest to the target — one start, one stop'],
+  hard: ['HARD CLASSIC', 'RACE: first to land INSIDE the zone wins'],
+  guess: ['GUESS THE CLOCK', 'No clocks. Feel the time, closest guess wins'],
+};
+
+function beginRound() {
+  if (!engine) return;
+  const reps = engine.peekReps ? engine.peekReps() : null;
+  if (!reps) { engine.nextRound(); return; } // PvE all-play: no matchup beat
+  const pool = Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
+  nextKind = resolveMode(pool);
+  presenting = { reps, ready: new Set(), t0: Date.now(), fired: false };
+  // Publish the presentation as the game state so the two phones show READY
+  // and everyone else's phone narrates (stateless-phone principle).
+  dbSet(dbRef(db, `sessions/${lobbyId}/game`), {
+    mode: 'present', status: 'present', kind: nextKind,
+    players: {
+      [reps.a.playerId]: { playerId: reps.a.playerId, name: reps.a.name, state: 'called' },
+      [reps.b.playerId]: { playerId: reps.b.playerId, name: reps.b.name, state: 'called' },
+    },
+    updatedAt: Date.now(),
+  }).catch(() => {});
+  renderPresent();
+}
+
+function firePresented(trigger) {
+  if (!presenting || presenting.fired) return;
+  presenting.fired = true;
+  const wait = Math.max(0, 6000 - (Date.now() - presenting.t0)); // hold the beat
+  logTransition('tv', 'present', 'firing', `${trigger} (in ${wait}ms)`);
+  setTimeout(() => { presenting = null; engine?.nextRound(); nextKind = null; }, wait);
+}
+
+function onReady(ev) {
+  if (!presenting || presenting.fired) return;
+  const ids = [presenting.reps.a.playerId, presenting.reps.b.playerId];
+  if (!ids.includes(ev.playerId)) return;
+  presenting.ready.add(ev.playerId);
+  renderPresent();
+  if (presenting.ready.size === 2) firePresented('dual ready-up');
+}
+
+function renderPresent() {
+  if (!presenting) return;
+  showScreen('reveal'); // reuse the card layout for the matchup presentation
+  const [t, obj] = KIND_LABEL[nextKind] || ['', ''];
+  const { reps, ready } = presenting;
+  el('reveal-head').innerHTML = `<span class="tv-words">${t}</span>`;
+  el('reveal-sub').innerHTML = `<span class="tv-words">${obj}</span>`;
+  const wrap = el('reveal-cards'); wrap.innerHTML = '';
+  [reps.a, reps.b].forEach((r) => {
+    const card = document.createElement('div');
+    card.className = 'reveal-card' + (ready.has(r.playerId) ? ' win' : '');
+    card.innerHTML = `<div class="rc-team tv-words">${ready.has(r.playerId) ? 'READY' : 'STAND UP'}</div><div class="rc-name">${r.name}</div><div class="rc-dev tv-words">${ready.has(r.playerId) ? '✓' : 'face away from the TV'}</div>`;
+    wrap.appendChild(card);
+  });
+  el('reveal-winner').textContent = ready.size === 2 ? 'Both ready — here we go…' : 'Round starts when BOTH tap READY on their phones.';
+  el('tv-game-msg').classList.remove('final');
+  el('tv-game-msg').textContent = '';
+}
+
 // Setup problems surface BOTH on the TV and on the host phone (via the
 // published config's msg field) — the phone is where the host is looking.
 const setupMsg = (t) => { menuMsg(t); publishConfig(t); };
@@ -427,7 +498,7 @@ function launchPve() {
     ? createKoth({ db, room: lobbyId, players: roster, n: config.kothN, hard, onTv: { state: renderRound }, onMatch: renderKoth })
     : createElim({ db, room: lobbyId, players: roster, onTv: { state: renderRound }, onMatch: renderElim });
   logTransition('tv', 'setup', 'pve-launch', `${config.pveMode} players=${roster.length}`);
-  engine.nextRound();
+  beginRound();
 }
 
 /* ---- PvP single-elim tournament (TR-52 hierarchy) ---- */
@@ -496,9 +567,9 @@ function startBracketGame() {
   // into the dead-heat void + 20s hostage cutoff (Hard runs exact-hit as-is).
   const pool = Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
   const matchExtra = { snapshot: serializeTournament(tourney.bracket, curMatch), teams: !!isTeams, hard: !!config.pool.hard };
-  engine = createKoth({ db, room: lobbyId, players: two, n: ROUNDS_TO_WIN_GAME, roundKindFn: () => resolveMode(pool), deadHeatVoid: true, perPlayerStopMs: 30000, targetFn: createClassicTargets(), onMoment: flashCue, matchExtra, initialWins: resumeWins || {}, onTv: { state: renderRound }, onMatch: onPvpGame });
+  engine = createKoth({ db, room: lobbyId, players: two, n: ROUNDS_TO_WIN_GAME, roundKindFn: () => nextKind || resolveMode(pool), deadHeatVoid: true, perPlayerStopMs: 30000, targetFn: createClassicTargets(), onMoment: flashCue, matchExtra, initialWins: resumeWins || {}, onTv: { state: renderRound }, onMatch: onPvpGame });
   resumeWins = null;
-  engine.nextRound();
+  beginRound();
 }
 
 function onPvpGame(m) {
@@ -579,7 +650,7 @@ function startTeamMatch() {
   const pool = Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
   engine = createTeamGame({
     db, room: lobbyId, teamA, teamB, n: ROUNDS_TO_WIN_GAME,
-    roundKindFn: () => resolveMode(pool), onMoment: flashCue, deadHeatVoid: true,
+    roundKindFn: () => nextKind || resolveMode(pool), onMoment: flashCue, deadHeatVoid: true,
     perPlayerStopMs: 30000, targetFn: createClassicTargets(),
     initialWinsA: resumeTeam?.a || 0, initialWinsB: resumeTeam?.b || 0, initialRoundNum: resumeTeam?.roundNum || 0,
     onTv: { state: (g, ctx) => renderTeamRound(g, ctx) },
@@ -590,7 +661,7 @@ function startTeamMatch() {
     }
   });
   resumeTeam = null;
-  engine.nextRound();
+  beginRound();
 }
 
 function renderTeamRound(g, ctx) {
@@ -780,9 +851,11 @@ async function boot() {
     }
     if (ev.type === 'cfg' && !inGame && ev.playerId === hostId && ev.config) { applyCfg(ev.config); return; }
     if (ev.type === 'startgame' && !inGame && ev.playerId === hostId) { startGame(); return; }
+    if (ev.type === 'ready') { onReady(ev); return; }
     if ((ev.type === 'press' || ev.type === 'guess') && engine) { engine.handleEvent(ev); return; }
     if (ev.type === 'next' && !engine && awaitingNextGame && ev.playerId === hostId) { awaitingNextGame = false; if (isTeams) startTeamMatch(); else startBracketGame(); return; }
-    if (ev.type === 'next' && engine && ev.playerId === hostId && engine.isBetween()) { engine.nextRound(); return; }
+    if (ev.type === 'next' && presenting && ev.playerId === hostId) { firePresented('host force-start'); return; }
+    if (ev.type === 'next' && engine && ev.playerId === hostId && engine.isBetween()) { beginRound(); return; }
   });
   // Resume a tournament in progress if the TV reloaded mid-game (reconnect).
   // The snapshot rides in the match node from ANY point: persistTournament writes

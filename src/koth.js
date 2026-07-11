@@ -161,6 +161,11 @@ export function createKoth({ db, room, players, n, hard = false, onTv, onMatch, 
     handleEvent,
     isBetween: () => status === 'between',
     isKing: () => status === 'king',
-    getState: matchState
+    getState: matchState,
+    // Stage 2 (TR-56): a 2-player koth game's reps are fixed — exposed so the
+    // TV can present the matchup and collect dual ready-up before the round.
+    peekReps: () => (players.length === 2
+      ? { a: players[0], b: players[1] }
+      : null),
   };
 }
