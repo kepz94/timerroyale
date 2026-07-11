@@ -464,6 +464,25 @@ function onReady(ev) {
   if (presenting.ready.size === 2) firePresented('dual ready-up');
 }
 
+// Profile lookup for matchup cards (signed-in players get their equipped
+// banner + display name; everyone else keeps the default frame). Async with a
+// cache — the card re-renders when a profile arrives.
+const profileCache = new Map(); // uid -> profile | 'pending'
+function profileFor(playerId) {
+  const p = players.find((x) => x.playerId === playerId);
+  if (!p || !p.uid) return null;
+  const hit = profileCache.get(p.uid);
+  if (hit && hit !== 'pending') return hit;
+  if (!hit) {
+    profileCache.set(p.uid, 'pending');
+    dbGet(dbRef(db, `users/${p.uid}`)).then((s) => {
+      profileCache.set(p.uid, s.val() || {});
+      if (presenting) renderPresent();
+    }).catch(() => profileCache.set(p.uid, {}));
+  }
+  return null;
+}
+
 function renderPresent() {
   if (!presenting) return;
   showScreen('reveal'); // reuse the card layout for the matchup presentation
@@ -474,9 +493,13 @@ function renderPresent() {
   const wrap = el('reveal-cards'); wrap.innerHTML = '';
   [reps.a, reps.b].forEach((r) => {
     const record = tonightLine(night, r.playerId) || 'first round tonight';
+    const prof = profileFor(r.playerId);
+    const dispName = (prof && prof.displayName) || r.name;
     const card = document.createElement('div');
-    card.className = 'reveal-card' + (ready.has(r.playerId) ? ' win' : '');
-    card.innerHTML = `<div class="rc-team tv-words">${ready.has(r.playerId) ? 'READY' : 'STAND UP'}</div><div class="rc-name">${r.name}</div><div class="rc-dev">${record}</div><div class="rc-dev tv-words">${ready.has(r.playerId) ? '✓' : 'face away from the TV'}</div>`;
+    card.className = 'reveal-card'
+      + (ready.has(r.playerId) ? ' win' : '')
+      + (prof && prof.banner ? ' banner-' + prof.banner : '');
+    card.innerHTML = `<div class="rc-team tv-words">${ready.has(r.playerId) ? 'READY' : 'STAND UP'}</div><div class="rc-ava">${(dispName[0] || '?').toUpperCase()}</div><div class="rc-name">${dispName}</div><div class="rc-dev">${record}</div><div class="rc-dev tv-words">${ready.has(r.playerId) ? '✓' : 'face away from the TV'}</div>`;
     wrap.appendChild(card);
   });
   el('reveal-winner').textContent = ready.size === 2 ? 'Both ready — here we go…' : 'Round starts when BOTH tap READY on their phones.';

@@ -145,6 +145,11 @@
       .led-ghost { opacity: var(--ghost-opacity); text-shadow: none; user-select: none; }
       #guess-actual .tv-words { font-size: .4em; color: var(--text-dim);
         display: block; text-shadow: none; }
+      /* Matchup-card avatar monogram (profile avatars come with Stage 3 logos) */
+      .rc-ava { width: clamp(3rem, 6vw, 6rem); height: clamp(3rem, 6vw, 6rem);
+        border-radius: 50%; background: var(--surface); border: 3px solid var(--primary);
+        display: grid; place-items: center; margin: .6rem auto .2rem;
+        font-size: clamp(1.6rem, 3.2vw, 3.2rem); font-weight: 800; }
 
       /* Reconnect — always reachable if a screen freezes */
       #tv-reconnect { position: fixed; top: 1rem; right: 1rem; z-index: 60;
