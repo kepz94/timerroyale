@@ -43,3 +43,38 @@ export function sfxStop() {
   beep({ freq: 392, durationMs: 220 });
   vibrate([40, 30, 40]);
 }
+
+/* ---- Guess the Clock whole-screen signal (TR-56 Stage 2, spec B4) ----
+   The signal IS the game: near-black waiting screen, a full-screen GREEN slam
+   (~300ms decay) with a LONG sustained start beep (~0.5s), a motionless dark
+   counting state, then a RED slam with a shorter, lower stop beep. Shared by
+   the party phone controller and solo mode so solo trains the party reflex. */
+
+/** Long sustained start beep (~0.5s). */
+export function guessStartCue() {
+  beep({ freq: 780, durationMs: 500, gain: 0.16 });
+  vibrate(60);
+}
+
+/** Shorter, lower stop beep. */
+export function guessStopCue() {
+  beep({ freq: 330, durationMs: 240, gain: 0.16 });
+  vibrate([50, 40, 50]);
+}
+
+/** Full-screen color slam with ~300ms decay. kind: 'start' (green) | 'stop' (red). */
+export function slamFlash(kind) {
+  let f = document.getElementById('guess-slam');
+  if (!f) {
+    f = document.createElement('div');
+    f.id = 'guess-slam';
+    f.style.cssText = 'position:fixed;inset:0;z-index:999;pointer-events:none;opacity:0;';
+    document.body.appendChild(f);
+  }
+  f.style.transition = 'none';
+  f.style.background = kind === 'start' ? '#22c55e' : '#ef4444';
+  f.style.opacity = '1';
+  void f.offsetWidth; // restart the transition
+  f.style.transition = 'opacity 300ms ease-out';
+  f.style.opacity = '0';
+}

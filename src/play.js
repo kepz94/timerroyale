@@ -8,7 +8,7 @@ import { initFirebase } from './firebase.js';
 import { getSession, restorePlayer, joinRoom, validateName, watchPlayers, setupPresence } from './players.js';
 import { watchAuth, signInGoogle, signOutUser, getProfile } from './auth.js';
 import { sendEvent, sendPress } from './engine.js';
-import { sfxStart, sfxStop } from './sfx.js';
+import { sfxStart, sfxStop, guessStartCue, guessStopCue, slamFlash } from './sfx.js';
 
 const el = (id) => document.getElementById(id);
 const db = initFirebase();
@@ -36,7 +36,17 @@ async function boot() {
   me = await restorePlayer(db, code);
   if (me) onJoined(); else { el('join-form').hidden = false; el('status').textContent = 'Enter your name to join.'; }
   watchPlayers(db, code, (list) => { players = list; renderPhase(); });
-  onValue(dref(db, `sessions/${code}/game`), (s) => { gameState = s.val(); renderPhase(); });
+  onValue(dref(db, `sessions/${code}/game`), (s) => {
+    const prev = gameState;
+    gameState = s.val();
+    // Guess whole-screen signal (TR-56 spec B4): slam + beep on the phase
+    // TRANSITIONS so every phone fires the cue in sync with the TV.
+    if (gameState?.mode === 'guess' && prev?.mode === 'guess') {
+      if (prev.status === 'get-ready' && gameState.status === 'interval') { slamFlash('start'); guessStartCue(); }
+      else if (prev.status === 'interval' && gameState.status === 'guessing') { slamFlash('stop'); guessStopCue(); }
+    }
+    renderPhase();
+  });
   onValue(dref(db, `sessions/${code}/match`), (s) => { matchState = s.val(); renderPhase(); });
   onValue(dref(db, `sessions/${code}/config`), (s) => { cfgState = s.val(); renderPhase(); });
 }

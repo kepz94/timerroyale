@@ -8,7 +8,7 @@ import { createGuessSoloGame, GUESS_SOLO_ROUNDS } from './guesssolo.js';
 import { createCasualGame, CASUAL_ROUNDS } from './casual.js';
 import { validatePool, resolveMode, ENVIRONMENTS } from './hostconfig.js';
 import { createMatch, getMatch, submitHostScore, reconcileRecord, seededTargets, lifecycle, awaitingHost, outcomeFor } from './match.js';
-import { sfxStart, sfxStop } from './sfx.js';
+import { sfxStart, sfxStop, guessStartCue, guessStopCue, slamFlash } from './sfx.js';
 import { registerSW } from 'virtual:pwa-register';
 registerSW({ immediate: true });
 
@@ -507,11 +507,13 @@ function finishCasual(totalMs) {
 let guessGame = null;
 
 function fireMomentSolo(kind) {
-  const f = el('flash');
-  f.classList.remove('start', 'stop');
-  void f.offsetWidth;
-  f.classList.add(kind);
-  try { kind === 'start' ? sfxStart() : sfxStop(); } catch { /* audio may be blocked pre-gesture */ }
+  // TR-56 spec B4: solo uses the SAME whole-screen signal as party — a
+  // full-screen green/red slam (~300ms decay), long ~0.5s start beep and a
+  // shorter lower stop beep. Solo is the training ground for party.
+  try {
+    slamFlash(kind);
+    kind === 'start' ? guessStartCue() : guessStopCue();
+  } catch { /* audio may be blocked pre-gesture */ }
 }
 
 function renderGuessRoundStart() {

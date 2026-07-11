@@ -284,7 +284,8 @@ function enableSound() {
 function flashCue(kind) {
   const f = el('tv-flash');
   if (f) { f.classList.remove('green', 'red'); void f.offsetWidth; f.classList.add(kind === 'start' ? 'green' : 'red'); setTimeout(() => f.classList.remove('green', 'red'), 500); }
-  beep(kind === 'start' ? 880 : 330, kind === 'start' ? 160 : 260);
+  // Spec B4: LONG sustained start beep (~0.5s), shorter LOWER stop beep.
+  beep(kind === 'start' ? 780 : 330, kind === 'start' ? 500 : 240);
 }
 
 // Guess Timer phase screens: observation (clock hidden) -> suspense (locking in)
