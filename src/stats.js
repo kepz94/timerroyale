@@ -98,3 +98,79 @@ export function tonightLine(night, playerId) {
   const best = s.bestDevMs != null ? ` · best Δ${(s.bestDevMs / 1000).toFixed(2)}s` : '';
   return `${s.wins}–${s.losses} tonight${best}`;
 }
+
+/* ---- Stage 3b (TR-58): the awards ceremony pool ----
+   Ten titles computed from the night ledger. TOP 4 air, ranked by stat
+   extremity (how far the winner stands from the runner-up), ONE title max
+   per player with runner-up inheritance; champions stay eligible. */
+
+const num = (v) => (Number.isFinite(v) ? v : null);
+
+export const AWARD_DEFS = [
+  { id: 'sniper', title: '🎯 THE SNIPER', dir: 'min',
+    stat: (s) => num(s.bestDevMs),
+    line: (v) => `best shot Δ${(v / 1000).toFixed(2)}s` },
+  { id: 'iceveins', title: '🧊 ICE VEINS', dir: 'max',
+    stat: (s) => (s.clutchWins > 0 ? s.clutchWins : null),
+    line: (v) => `${v} clutch win${v === 1 ? '' : 's'} (≤0.05s)` },
+  { id: 'heartbreaker', title: '💔 HEARTBREAKER', dir: 'max',
+    stat: (s) => (s.losses > 0 ? s.losses : null),
+    line: (v) => `${v} round losses — so close, so often` },
+  { id: 'dnfking', title: '⏰ DNF KING', dir: 'max',
+    stat: (s) => (s.dnfs > 0 ? s.dnfs : null),
+    line: (v) => `${v} DNF${v === 1 ? '' : 's'} — the clock won` },
+  { id: 'heater', title: '🔥 THE HEATER', dir: 'max',
+    stat: (s) => (s.bestStreak >= 2 ? s.bestStreak : null),
+    line: (v) => `${v} round wins in a row` },
+  { id: 'triggerhappy', title: '⚡ TRIGGER HAPPY', dir: 'max',
+    stat: (s) => (s.early > 0 ? s.early : null),
+    line: (v) => `${v} early stops` },
+  { id: 'late', title: '🕰️ FASHIONABLY LATE', dir: 'max',
+    stat: (s) => (s.late > 0 ? s.late : null),
+    line: (v) => `${v} late stops` },
+  { id: 'speedrunner', title: '🏃 SPEEDRUNNER', dir: 'min',
+    stat: (s) => (s.lockInCount > 0 ? s.lockInSumMs / s.lockInCount : null),
+    line: (v) => `${(v / 1000).toFixed(2)}s average lock-in` },
+  { id: 'wildcard', title: '🃏 WILDCARD', dir: 'max',
+    stat: (s) => (s.devCount >= 2
+      ? Math.max(0, s.devSumSqMs / s.devCount - (s.devSumMs / s.devCount) ** 2)
+      : null),
+    line: () => 'highest chaos factor tonight' },
+  { id: 'workhorse', title: '🐴 WORKHORSE', dir: 'max',
+    stat: (s) => (s.rounds > 0 ? s.rounds : null),
+    line: (v) => `${v} rounds played` },
+];
+
+/** Top-`cap` awards: [{id, title, playerId, name, statLine}]. */
+export function computeAwards(night, cap = 4) {
+  const players = Object.values(night.players || {});
+  if (!players.length) return [];
+  // Per title: rank eligible players best-first, with the extremity margin.
+  const ranked = AWARD_DEFS.map((def) => {
+    const entries = players
+      .map((s) => ({ s, v: def.stat(s) }))
+      .filter((e) => e.v != null)
+      .sort((a, b) => (def.dir === 'min' ? a.v - b.v : b.v - a.v));
+    if (!entries.length) return null;
+    const [best, second] = entries;
+    const extremity = second
+      ? Math.abs(best.v - second.v) / (Math.abs(second.v) + 1)
+      : 1; // unchallenged = maximally extreme
+    return { def, entries, extremity };
+  }).filter(Boolean).sort((a, b) => b.extremity - a.extremity);
+  // Greedy: one title per player; a taken player passes the title down.
+  const takenPlayers = new Set();
+  const out = [];
+  for (const r of ranked) {
+    if (out.length >= cap) break;
+    const heir = r.entries.find((e) => !takenPlayers.has(e.s.playerId));
+    if (!heir) continue;
+    takenPlayers.add(heir.s.playerId);
+    out.push({
+      id: r.def.id, title: r.def.title,
+      playerId: heir.s.playerId, name: heir.s.name,
+      statLine: r.def.line(heir.v),
+    });
+  }
+  return out;
+}

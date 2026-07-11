@@ -51,3 +51,25 @@ test('roundEntries maps guess deltas and hard attempt logs', () => {
   assert.equal(rh.entries.find((e) => e.playerId === 'a').deviationMs, 50);
   assert.equal(rh.entries.find((e) => e.playerId === 'b').dnf, true);
 });
+
+test('computeAwards: extremity ranking, one title per player, inheritance', async () => {
+  const { computeAwards } = await import('../src/stats.js');
+  const n = blankNight();
+  // Ana: sharpshooter + streak; Ben: losses + DNFs; Cy: grinder.
+  for (let i = 0; i < 3; i++) {
+    recordRound(n, { winnerId: 'a', entries: [
+      { playerId: 'a', name: 'Ana', deviationMs: 20 + i, early: true },
+      { playerId: 'b', name: 'Ben', deviationMs: 800 + i, late: true },
+      { playerId: 'c', name: 'Cy', deviationMs: 400, late: true },
+    ] });
+  }
+  recordRound(n, { winnerId: 'c', entries: [
+    { playerId: 'b', name: 'Ben', dnf: true },
+    { playerId: 'c', name: 'Cy', deviationMs: 300 },
+  ] });
+  const awards = computeAwards(n, 4);
+  assert.ok(awards.length >= 3 && awards.length <= 4);
+  const winners = awards.map((a) => a.playerId);
+  assert.equal(new Set(winners).size, winners.length); // one title max per player
+  assert.ok(awards.every((a) => a.title && a.statLine));
+});

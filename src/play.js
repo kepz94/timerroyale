@@ -275,7 +275,36 @@ function renderGuessPhone() {
   }
 }
 
+document.querySelectorAll('#endnight [data-en]').forEach((b) =>
+  b.addEventListener('click', () => { if (me) sendEvent(db, code, me.playerId, 'endnight-choice', { choice: b.dataset.en }); }));
+
 function renderPhase() {
+  // Stage 3b end-night: rematch menu on the HOST phone, narrator elsewhere.
+  const hostE = hostPlayer();
+  const hostMe = hostE && me && hostE.playerId === me.playerId;
+  const endnight = matchState && matchState.type === 'endnight';
+  if (el('endnight')) el('endnight').hidden = !(endnight && hostMe);
+  if (endnight) {
+    if (el('draft-panel')) el('draft-panel').hidden = true;
+    if (el('big-press')) el('big-press').hidden = true;
+    renderHostConfig(false);
+    if (el('next-round-btn')) el('next-round-btn').hidden = true;
+    const b = el('turn-banner');
+    if (b) b.textContent = hostMe ? '🌙 Your call, host — what happens next?' : '👑 Champions crowned! The host is picking what\'s next…';
+    return;
+  }
+  // Awards / champion: pure narrator states.
+  if (gameState?.mode === 'awards') {
+    if (el('big-press')) el('big-press').hidden = true;
+    const b = el('turn-banner');
+    if (b) b.textContent = gameState.status === 'champion'
+      ? (hostMe ? '🏆 Champions! Tap Next for the rematch menu.' : '🏆 Champions crowned — look at the TV!')
+      : '🏅 Awards ceremony — eyes on the TV!';
+    if (el('next-round-btn')) el('next-round-btn').hidden = !(hostMe && gameState.status === 'champion');
+    if (el('result-panel')) el('result-panel').hidden = true;
+    if (el('guess-panel')) el('guess-panel').hidden = true;
+    return;
+  }
   // Stage 3a wheels: pure look-at-screen narrator state (phone never dark).
   if (matchState && matchState.type === 'wheel') {
     if (el('draft-panel')) el('draft-panel').hidden = true;

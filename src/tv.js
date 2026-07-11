@@ -21,7 +21,7 @@ import { createTournament, restoreTournament, serializeTournament, ROUNDS_TO_WIN
 import { createClassicTargets } from './targets.js';
 import { createTeamGame, distributeTeams } from './teamgame.js';
 import { createDraftState, applyPick, autoPick, draftTeams, applyLogo, autoFillCustomization } from './draft.js';
-import { blankNight, recordRound, roundEntries, tonightLine } from './stats.js';
+import { blankNight, recordRound, roundEntries, tonightLine, computeAwards } from './stats.js';
 import { ref as dbRef, set as dbSet, get as dbGet } from 'firebase/database';
 import { fmtOff, fmtS2, fmtS, fmtSigned } from './format.js';
 
@@ -591,9 +591,8 @@ function nextTourneyGame() {
   engine = null;
   el('tv-ledger').hidden = true;
   if (tourney.isComplete()) {
-    renderBracket();
-    renderChampion(bracket.champion);
     persistTournament();
+    runAwardsCeremony(() => renderChampion(bracket.champion));
     return;
   }
   curMatch = tourney.current();
@@ -636,6 +635,22 @@ function launchTeams() {
   if (roster.length < 3) return menuMsg('Teams needs at least 3 players.');
   isTeams = true;
   showGame(true);
+  // Rematch (D3): same teams, fresh bracket spin — but ONLY if the roster is
+  // unchanged since the draft; a changed room auto-converts to a new draft.
+  if (pendingRematch) {
+    const nowIds = roster.map((p) => p.playerId).sort().join(',');
+    const rematch = pendingRematch; pendingRematch = null;
+    if (nowIds === rematch.rosterIds) {
+      const shuffled = [...rematch.teams].sort(() => Math.random() - 0.5);
+      tourney = createTournament(shuffled.map((t) => ({ id: t.id, name: `${t.emoji} ${t.name}`, members: t.members })));
+      bracket = tourney.bracket;
+      dbSet(dbRef(db, `sessions/${lobbyId}/match`), { type: 'tournament', status: 'playing' }).catch(() => {});
+      logTransition('tv', 'rematch', 'tournament-start', 'same teams, fresh seeds');
+      revealBracket(() => nextTourneyGame());
+      return;
+    }
+    logTransition('tv', 'rematch', 'roster-changed', 'auto-converting to new draft');
+  }
   runCaptainWheels(roster);
 }
 
@@ -731,6 +746,7 @@ function finalizeDraft() {
   stopClock();
   clearTimeout(nameTimer); clearInterval(nameTicker); nameDeadline = null;
   const teams = draftTeams(draftState, nameOf);
+  lastTeams = teams; // Rematch (D3) reuses these
   draftState = null;
   tourney = createTournament(teams.map((t) => ({ id: t.id, name: `${t.emoji} ${t.name}`, members: t.members })));
   bracket = tourney.bracket;
@@ -956,12 +972,111 @@ function renderBracket(mask) {
   champCol.appendChild(cbox); host.appendChild(champCol);
 }
 
+/* ---- Stage 3b (TR-58): awards ceremony -> champion trophy -> rematch ---- */
+
+// D1: top-4 titles from the tonight ledger, one ~4s auto-advancing card each.
+function runAwardsCeremony(done) {
+  const awards = computeAwards(night, 4);
+  if (!awards.length) { done(); return; }
+  dbSet(dbRef(db, `sessions/${lobbyId}/game`), { mode: 'awards', status: 'awards', updatedAt: Date.now() }).catch(() => {});
+  showScreen('reveal');
+  el('tv-ledger').hidden = true;
+  el('tv-match-banner').innerHTML = '<span class="tv-words">🏅 TONIGHT\'S AWARDS</span>';
+  el('reveal-sub').textContent = '';
+  el('reveal-winner').textContent = '';
+  let i = 0;
+  const card = () => {
+    if (i >= awards.length) { setTimeout(done, 800); return; }
+    const a = awards[i]; i += 1;
+    el('reveal-head').innerHTML = `<span class="tv-words">${a.title}</span>`;
+    const wrap = el('reveal-cards'); wrap.innerHTML = '';
+    const c = document.createElement('div');
+    c.className = 'reveal-card win';
+    c.innerHTML = `<div class="rc-ava">${(a.name[0] || '?').toUpperCase()}</div><div class="rc-name">${a.name}</div><div class="rc-dev">${a.statLine}</div>`;
+    wrap.appendChild(c);
+    el('reveal-winner').textContent = `${i} of ${awards.length}`;
+    drumroll();
+    setTimeout(card, 4000);
+  };
+  card();
+}
+
+// D2: giant logo, team name, player cards, run record, confetti + sting;
+// holds until the host advances into the rematch choice (D3).
 function renderChampion(c) {
-  renderBracket();
-  el('tv-match-banner').textContent = '🏆 TOURNAMENT CHAMPION 🏆';
-  el('tv-rotation').textContent = '';
+  showScreen('reveal');
+  const matchesWon = bracket.rounds.flat().filter((m) => m.winner && m.winner.id === c.id).length;
+  const emoji = (c.name.match(/^\p{Extended_Pictographic}/u) || ['🏆'])[0];
+  el('tv-match-banner').innerHTML = '<span class="tv-words">🏆 TOURNAMENT CHAMPION 🏆</span>';
+  el('reveal-head').innerHTML = `<span style="font-size:2.2em;line-height:1">${emoji}</span>`;
+  el('reveal-sub').innerHTML = `<span class="tv-words" style="font-size:1.6em;color:var(--win)">${c.name.replace(/^\p{Extended_Pictographic}\s*/u, '')}</span>`;
+  const wrap = el('reveal-cards'); wrap.innerHTML = '';
+  (c.members || []).forEach((m) => {
+    const pc = document.createElement('div');
+    pc.className = 'reveal-card win';
+    pc.innerHTML = `<div class="rc-ava">${(m.name[0] || '?').toUpperCase()}</div><div class="rc-name">${m.name}</div><div class="rc-dev">${tonightLine(night, m.playerId) || ''}</div>`;
+    wrap.appendChild(pc);
+  });
+  el('reveal-winner').textContent = `Run: ${matchesWon} match${matchesWon === 1 ? '' : 'es'} won · champions of the night`;
   el('tv-game-msg').classList.add('final');
-  el('tv-game-msg').textContent = `🏆 ${c.name} wins the bracket!`;
+  el('tv-game-msg').textContent = 'Host — tap Next for the rematch menu.';
+  confettiBurst();
+  drumroll();
+  awaitingEndNight = 'champion';
+  dbSet(dbRef(db, `sessions/${lobbyId}/game`), { mode: 'awards', status: 'champion', updatedAt: Date.now() }).catch(() => {});
+}
+
+// Emoji confetti over the banners — no libraries, cleans itself up.
+function confettiBurst() {
+  const bits = ['🎉', '✨', '🎊', '⭐'];
+  for (let i = 0; i < 28; i++) {
+    const s = document.createElement('span');
+    s.textContent = bits[i % bits.length];
+    s.style.cssText = `position:fixed;top:-5vh;left:${Math.random() * 100}vw;z-index:70;font-size:${1.2 + Math.random() * 2}rem;pointer-events:none;transition:transform ${2.2 + Math.random() * 2}s ease-in,opacity .5s ease ${3.6}s;`;
+    document.body.appendChild(s);
+    requestAnimationFrame(() => {
+      s.style.transform = `translateY(${108 + Math.random() * 10}vh) rotate(${Math.random() * 720 - 360}deg)`;
+      s.style.opacity = '0';
+    });
+    setTimeout(() => s.remove(), 4600);
+  }
+}
+
+// D3: the rematch menu lives on the HOST PHONE; the TV narrates. Every path
+// routes back through the lobby/QR screen so newcomers can scan in.
+let awaitingEndNight = null; // 'champion' -> 'choice'
+let pendingRematch = null;   // { teams, rosterIds } — Rematch keeps the teams
+let lastTeams = null;        // the drafted teams, kept for Rematch
+
+function showEndNightChoice() {
+  awaitingEndNight = 'choice';
+  dbSet(dbRef(db, `sessions/${lobbyId}/match`), { type: 'endnight', status: 'choice' }).catch(() => {});
+  el('tv-game-msg').classList.remove('final');
+  el('tv-game-msg').textContent = 'Host is choosing: Rematch · New Draft · Change Mode · End Night';
+}
+
+function backToLobby(msg) {
+  engine = null; tourney = null; bracket = null; curMatch = null;
+  draftState = null; awaitingNextGame = false; awaitingEndNight = null;
+  dbSet(dbRef(db, `sessions/${lobbyId}/match`), null).catch(() => {});
+  dbSet(dbRef(db, `sessions/${lobbyId}/game`), null).catch(() => {});
+  showGame(false);
+  publishConfig(msg || '');
+  render();
+  el('status').hidden = false;
+  el('status').textContent = msg || 'Back in the lobby — newcomers can scan in.';
+}
+
+function onEndNightChoice(choice) {
+  if (choice === 'end') { pendingRematch = null; backToLobby('Night ended — thanks for playing! Start fresh anytime.'); return; }
+  if (choice === 'mode') { pendingRematch = null; backToLobby('Change it up — host, adjust the config and start.'); return; }
+  if (choice === 'draft') { pendingRematch = null; backToLobby('New draft! Host taps START when everyone is in.'); return; }
+  if (choice === 'rematch') {
+    pendingRematch = lastTeams
+      ? { teams: lastTeams, rosterIds: lastTeams.flatMap((t) => t.members.map((m) => m.playerId)).sort().join(',') }
+      : null;
+    backToLobby('REMATCH — same teams! Host taps START (roster changes trigger a new draft).');
+  }
 }
 
 /* ---------------- boot ---------------- */
@@ -996,6 +1111,8 @@ async function boot() {
     if (ev.type === 'cfg' && !inGame && ev.playerId === hostId && ev.config) { applyCfg(ev.config); return; }
     if (ev.type === 'startgame' && !inGame && ev.playerId === hostId) { startGame(); return; }
     if (ev.type === 'ready') { onReady(ev); return; }
+    if (ev.type === 'next' && awaitingEndNight === 'champion' && ev.playerId === hostId) { showEndNightChoice(); return; }
+    if (ev.type === 'endnight-choice' && awaitingEndNight === 'choice' && ev.playerId === hostId && ev.choice) { onEndNightChoice(ev.choice); return; }
     if ((ev.type === 'press' || ev.type === 'guess') && engine) { engine.handleEvent(ev); return; }
     if (ev.type === 'next' && !engine && awaitingNextGame && ev.playerId === hostId) { awaitingNextGame = false; if (isTeams) startTeamMatch(); else startBracketGame(); return; }
     if (ev.type === 'next' && presenting && ev.playerId === hostId) { firePresented('host force-start'); return; }
