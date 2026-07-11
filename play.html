@@ -43,6 +43,12 @@
       #result-panel .res-row.me { color: #4ade80; font-weight: 800; }
       #result-panel .res-sub { color: #7e967f; margin-top: .3rem; }
 
+      /* TR-59: the round target, amber LED like the TV board */
+      #phone-target { margin: .6rem auto 0; }
+      #phone-target .target-label { color: var(--warn); }
+      .phone-target-digits { font-size: clamp(3rem, 19vw, 5.5rem); line-height: 1;
+        color: var(--warn); text-shadow: var(--led-glow-warn); }
+
       /* Guess Timer numeric keypad */
       #guess-panel { margin: 1rem auto 0; max-width: 20rem; }
       #guess-phone-status { font-size: 1.15rem; color: #f0b429; margin-bottom: .6rem; }
@@ -76,6 +82,11 @@
       <div id="joined-panel" class="joined-panel" hidden>
         <p id="joined-name" class="joined-name"></p>
         <p id="turn-banner" class="turn-banner"></p>
+        <!-- TR-59: active players face AWAY from the TV — the target lives here -->
+        <div id="phone-target" hidden>
+          <p class="target-label">🎯 Target</p>
+          <p id="phone-target-digits" class="timer-digits phone-target-digits">--<span class="timer-unit">s</span></p>
+        </div>
         <button id="big-press" class="big-btn" type="button" hidden aria-label="Press"><span id="big-press-label">TAP TO START</span></button>
         <div id="result-panel" hidden aria-live="polite"></div>
         <div id="guess-panel" hidden>

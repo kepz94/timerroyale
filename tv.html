@@ -137,6 +137,12 @@
       #tv-game #tv-target, #tv-game .timer-digits, #hard-target {
         font-family: var(--font-digits); font-weight: 400;
         color: var(--primary); text-shadow: var(--led-glow); }
+      /* TR-59: the TARGET is the objective, not a running clock — amber LED
+         so it pops against every green readout instead of drowning in the
+         same green-on-green glow. */
+      #tv-game #tv-target, #hard-target {
+        color: var(--warn); text-shadow: var(--led-glow-warn); }
+      #tv-game .target-label { color: var(--warn); }
       #tv-target .timer-unit, #hard-target .timer-unit, #guess-actual .timer-unit {
         font-family: var(--font); font-weight: 800; color: var(--text-dim);
         text-shadow: none; letter-spacing: 0; }

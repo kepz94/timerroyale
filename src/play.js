@@ -17,6 +17,11 @@ const code = parts[1] ? parts[1].toUpperCase() : null;
 
 const fmt2 = (ms) => (ms / 1000).toFixed(2);
 const signed = (ms) => { const x = ms / 1000; return (x > 0 ? '+' : x < 0 ? '-' : '') + Math.abs(x).toFixed(2); };
+// TR-59: LED target readout with ghost segments (Classic/Hard targets are tenths).
+const ledTarget = (ms) => {
+  const txt = (ms / 1000).toFixed(1);
+  return `<span class="led-wrap"><span class="led-ghost">${txt.replace(/[0-9]/g, '8')}</span><span>${txt}</span></span><span class="timer-unit">s</span>`;
+};
 
 let currentUser = null;
 let me = null;
@@ -279,6 +284,9 @@ document.querySelectorAll('#endnight [data-en]').forEach((b) =>
   b.addEventListener('click', () => { if (me) sendEvent(db, code, me.playerId, 'endnight-choice', { choice: b.dataset.en }); }));
 
 function renderPhase() {
+  // TR-59: hidden by default so every narrator/menu state clears it; the
+  // active-round branch below re-shows it before this render paints.
+  if (el('phone-target')) el('phone-target').hidden = true;
   // Stage 3b end-night: rematch menu on the HOST phone, narrator elsewhere.
   const hostE = hostPlayer();
   const hostMe = hostE && me && hostE.playerId === me.playerId;
@@ -342,6 +350,11 @@ function renderPhase() {
     if (st === 'running') { btn.classList.add('running'); btn.disabled = false; if (lbl) lbl.textContent = 'TAP TO STOP'; }
     else if (st === 'stopped' || st === 'dnf') { btn.classList.remove('running'); btn.disabled = true; if (lbl) lbl.textContent = st === 'dnf' ? 'DNF' : 'DONE'; }
     else { btn.classList.remove('running'); btn.disabled = false; if (lbl) lbl.textContent = 'TAP TO START'; }
+    // TR-59: players face away from the TV — the target lives on the phone.
+    if (el('phone-target') && Number.isFinite(gameState.targetMs)) {
+      el('phone-target-digits').innerHTML = ledTarget(gameState.targetMs);
+      el('phone-target').hidden = false;
+    }
   }
   if (el('next-round-btn')) el('next-round-btn').hidden = !(iAmHost && phase === 'intermission');
 
