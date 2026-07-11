@@ -126,6 +126,26 @@
       #hard-clock { font-size: clamp(3rem, 9vw, 10rem); font-weight: 800;
         font-variant-numeric: tabular-nums; color: var(--accent); line-height: 1; min-height: 1em; }
 
+      /* ============================================================
+         TR-56 identity sweep (ADR-006): hero numerals get the seven-
+         segment LED face with glow + ghost segments; words stay in the
+         wide sans; more air between board sections (spacing pass).
+         ============================================================ */
+      #tv-game { gap: 2.4vh; padding: 4vh 4vw; }
+      .tv-state { gap: 2.2vh; }
+      .reveal-cards { margin: 1.2vh 0; }
+      #tv-game #tv-target, #tv-game .timer-digits, #hard-target {
+        font-family: var(--font-digits); font-weight: 400;
+        color: var(--primary); text-shadow: var(--led-glow); }
+      #tv-target .timer-unit, #hard-target .timer-unit, #guess-actual .timer-unit {
+        font-family: var(--font); font-weight: 800; color: var(--text-dim);
+        text-shadow: none; letter-spacing: 0; }
+      .led-wrap { position: relative; display: inline-grid; }
+      .led-wrap > * { grid-area: 1 / 1; }
+      .led-ghost { opacity: var(--ghost-opacity); text-shadow: none; user-select: none; }
+      #guess-actual .tv-words { font-size: .4em; color: var(--text-dim);
+        display: block; text-shadow: none; }
+
       /* Reconnect — always reachable if a screen freezes */
       #tv-reconnect { position: fixed; top: 1rem; right: 1rem; z-index: 60;
         background: #12321c; color: #4ade80; border: 2px solid #22c55e; border-radius: .6rem;

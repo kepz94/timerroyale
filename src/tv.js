@@ -30,6 +30,10 @@ const fmt = (ms) => (ms / 1000).toFixed(1);
 // Stage 1 precision: Classic/Hard targets ARE tenths, so they render to 1
 // decimal. (Guess targets are hundredths but never displayed as targets.)
 const fmtTarget = (g) => fmt(g.targetMs);
+// TR-56 identity: a hero LED readout — dim unlit "8" segments layered behind
+// the lit digits (real clocks always show their ghost segments).
+const ledHtml = (txt) =>
+  `<span class="led-wrap"><span class="led-ghost">${String(txt).replace(/[0-9]/g, '8')}</span><span>${txt}</span></span><span class="timer-unit">s</span>`;
 // Ledger-dot strip for a game score (filled / empty out of ROUNDS_TO_WIN_GAME).
 const dots = (won, filled, empty) => filled.repeat(Math.min(won, ROUNDS_TO_WIN_GAME)) + empty.repeat(Math.max(0, ROUNDS_TO_WIN_GAME - won));
 const db = initFirebase();
@@ -147,7 +151,7 @@ function renderHard(g, teamCtx) {
     const ids = [g.repA.playerId, g.repB.playerId];
     el('hard-head').textContent = '🏁 RACE TO THE ZONE';
     el('hard-sub').textContent = `First to land in the zone wins — ${ids.map((id) => `${g.players[id]?.name || ''} ${((g.attempts[id] || []).length)}/13`).join('  ·  ')}`;
-    el('hard-target').innerHTML = `${target1}<span class="timer-unit">s</span>`;
+    el('hard-target').innerHTML = ledHtml(target1);
     el('hard-zone').textContent = `HIT THE ZONE ${fmtS2(zoneLo)}s – ${fmtS2(zoneHi)}s`;
     const hist = el('hard-history'); hist.innerHTML = '';
     ids.forEach((id) => {
@@ -328,7 +332,7 @@ function renderGuess(g, teamCtx) {
       guessRevealTimer = setTimeout(() => {
         el('guess-head').textContent = 'THE REVEAL';
         actual.hidden = false;
-        actual.innerHTML = `ACTUAL ${fmtS2(g.actualMs)}<span class="timer-unit">s</span>`;
+        actual.innerHTML = `<span class="tv-words">Actual time</span>${ledHtml(fmtS2(g.actualMs))}`;
         drawCards(true);
         el('guess-winner').textContent = g.winner ? `🏆 ${labelFor(g.winner.playerId, ids.indexOf(g.winner.playerId))} wins the round! (+1)` : 'No winner';
         drumroll(); // cinematic reveal (ends on a chime)
@@ -693,7 +697,7 @@ function renderTeamRound(g, ctx) {
   if (g.status === 'running') {
     showScreen('active');
     el('tv-target-label').hidden = false;
-    el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
+    el('tv-target').innerHTML = ledHtml(fmtTarget(g));
     el('tv-turn').hidden = true;
     el('tv-round-rows').innerHTML = '';
     // Live spectator clocks — Team tournaments only: the active reps face away
@@ -740,7 +744,7 @@ function renderRound(g) {
     // blind — the room watches the race on the board.
     showScreen('active');
     el('tv-target-label').hidden = false;
-    el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
+    el('tv-target').innerHTML = ledHtml(fmtTarget(g));
     el('tv-turn').hidden = true;
     el('tv-round-rows').innerHTML = '';
     const clk = el('tv-clocks'); clk.hidden = false;
@@ -759,7 +763,7 @@ function renderRound(g) {
   } else if (g.status === 'running') {
     showScreen('active');
     el('tv-target-label').hidden = false;
-    el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
+    el('tv-target').innerHTML = ledHtml(fmtTarget(g));
     el('tv-turn').hidden = true;
     fillRows(g);
     el('tv-game-msg').classList.remove('final');
@@ -774,7 +778,7 @@ function renderRound(g) {
     // PvE ranking (N players): keep the ranked rows.
     showScreen('active');
     el('tv-target-label').hidden = false;
-    el('tv-target').innerHTML = `${fmtTarget(g)}<span class="timer-unit">s</span>`;
+    el('tv-target').innerHTML = ledHtml(fmtTarget(g));
     el('tv-turn').hidden = true;
     fillRows(g);
     const msg = el('tv-game-msg'); msg.classList.add('final');
