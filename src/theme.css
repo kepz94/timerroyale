@@ -14,8 +14,15 @@
 
   --danger: #ef4444;        /* elimination, time's up */
   --warn: #f59e0b;          /* low-time warning */
+  --target: #f0b429;        /* the objective — never shares a hue with live clocks (TR-59) */
   --win: #fbbf24;           /* winner gold */
   --accent: #4ade80;        /* joins, info, links — green LED family */
+  --hairline: #1e2b20;      /* row dividers on surfaces */
+
+  /* Team colors (design system) — the ONLY saturated intrusions; distinguish
+     drafted teams at couch distance. Never use as UI chrome. */
+  --team-1: #22c55e; --team-2: #38bdf8; --team-3: #f472b6; --team-4: #f59e0b;
+  --team-5: #a78bfa; --team-6: #ef4444; --team-7: #facc15; --team-8: #fb923c;
 
   /* Typography — the ADR-006 law: seven-segment faces are a NUMBERS-ONLY
      privilege (with dim ghost segments behind lit digits); ALL words use a
@@ -26,7 +33,6 @@
   --font-words: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; /* + .tv-words: 800 weight, wide tracking, uppercase */
   /* DEPRECATED by the typography law — do not use segment faces for words: */
   --font-alnum: 'DSEG14-Classic', ui-monospace, monospace;
-  --ghost-opacity: 0.14;     /* dim unlit segments behind lit digits */
   --track-wide: 0.14em;      /* word tracking for TV labels */
   --led-glow: 0 0 10px rgb(34 197 94 / 0.55), 0 0 34px rgb(34 197 94 / 0.22);
   --led-glow-warn: 0 0 10px rgb(245 158 11 / 0.55), 0 0 34px rgb(245 158 11 / 0.22);

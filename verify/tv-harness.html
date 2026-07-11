@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>TimerRoyale — TV verification harness (ADR-007)</title>
+    <link rel="stylesheet" href="../src/style.css" />
+    <link rel="stylesheet" href="_tvstyles.css" />
+    <style>
+      /* Fit badge — verification chrome only, excluded from overflow math */
+      #fit-badge { position: fixed; left: 0; bottom: 0; z-index: 99; font: 700 18px monospace;
+        padding: 4px 10px; color: #000; background: #22c55e; }
+      #fit-badge.bad { background: #ef4444; color: #fff; }
+    </style>
+  </head>
+  <body class="host">
+    <button id="tv-reconnect" type="button">⟳ Reconnect</button>
+    <button id="tv-sound" type="button">🔊 Enable sound</button>
+    <div id="tv-flash"></div>
+    <div id="tv-title" class="tv-title" hidden>
+      <div class="tt-inner">
+        <p id="tt-kicker" class="tt-kicker"></p>
+        <p id="tt-title" class="tt-title"></p>
+        <p id="tt-hint" class="tt-hint"></p>
+      </div>
+    </div>
+    <main id="app" class="lobby">
+      <h1>TimerRoyale</h1>
+      <p class="subtitle">Scan to grab a controller</p>
+      <section class="join-panel" aria-label="How to join">
+        <div class="qr-card"><canvas id="qr" width="320" height="320"></canvas></div>
+        <div class="room-info">
+          <p class="room-label">Room code</p>
+          <p id="room-code" class="room-code">KJZQ</p>
+          <p id="join-url" class="join-url">timerroyale.web.app/play/KJZQ</p>
+        </div>
+      </section>
+      <section class="players-panel" aria-label="Players">
+        <p class="players-label">Players (⭐ = signed-in host)</p>
+        <ul id="player-list" class="player-list"></ul>
+        <p id="players-empty" class="players-empty" hidden>No one has joined yet</p>
+      </section>
+      <section id="tv-menu" class="tv-menu" hidden aria-label="Host setup">
+        <p class="players-label">Host setup — drive this with your phone remote</p>
+        <ul id="tv-menu-list"></ul>
+        <p id="tv-menu-msg" class="tv-menu-msg"></p>
+      </section>
+      <section id="tv-game" class="game-panel" hidden aria-label="Game">
+        <p id="tv-match-banner" class="match-banner"></p>
+        <div id="tv-ledger" class="tv-ledger" hidden></div>
+        <div id="tv-active" class="tv-state" hidden>
+          <p id="tv-target-label" class="target-label">Target</p>
+          <p id="tv-target" class="timer-digits">0.0<span class="timer-unit">s</span></p>
+          <p id="tv-turn" class="tv-turn" hidden></p>
+          <div id="tv-clocks" class="tv-clocks" hidden></div>
+          <ul id="tv-round-rows" class="round-rows"></ul>
+        </div>
+        <div id="tv-reveal" class="tv-state" hidden>
+          <p id="reveal-head" class="reveal-head"></p>
+          <p id="reveal-sub" class="reveal-sub"></p>
+          <div id="reveal-cards" class="reveal-cards"></div>
+          <p id="reveal-winner" class="reveal-winner"></p>
+        </div>
+        <div id="tv-hard" class="tv-state" hidden>
+          <p id="hard-head" class="reveal-head"></p>
+          <p id="hard-sub" class="reveal-sub"></p>
+          <p id="hard-target" class="timer-digits"></p>
+          <p id="hard-clock" hidden></p>
+          <p id="hard-zone" class="rc-dev"></p>
+          <ul id="hard-history" class="round-rows"></ul>
+          <p id="hard-winner" class="reveal-winner"></p>
+          <p id="hard-representing" class="rotation-banner"></p>
+        </div>
+        <div id="tv-guess" class="tv-state" hidden>
+          <p id="guess-head" class="reveal-head"></p>
+          <p id="guess-actual" class="timer-digits" hidden></p>
+          <div id="guess-cards" class="reveal-cards"></div>
+          <p id="guess-winner" class="reveal-winner"></p>
+        </div>
+        <div id="tv-wheel" class="tv-state" hidden><div id="wheel-stage"></div></div>
+        <div id="tv-draft" class="tv-state" hidden><div id="draft-stage"></div></div>
+        <div id="tv-bracket" class="tv-bracket" hidden></div>
+        <ul id="tv-standings" class="standings"></ul>
+        <p id="tv-rotation" class="rotation-banner"></p>
+        <p id="tv-game-msg" class="game-msg"></p>
+      </section>
+      <p id="status" hidden></p>
+    </main>
+    <div id="fit-badge">measuring…</div>
+    <script>
+      // ADR-007 harness: renders every TV screen STATE with the exact class/
+      // markup shapes tv.js generates (worst-case content lengths), then
+      // self-measures overflow against the 1920x1080 stage.
+      const el = (id) => document.getElementById(id);
+      const state = new URLSearchParams(location.search).get('state') || 'config';
+      const TC = (i) => `var(--team-${i})`;
+      // Worst-case names: 16-char cap on player + team names.
+      const LONGP = ['MAXIMILIANOOOOOO', 'Bartholomewwwwww', 'Kepz', 'Ava', 'Priya', 'Deshawn', 'Lena', 'Tomás', 'Marco', 'Sam', 'Jocelynnnnnnnnnn', 'Christopherrrrrr', 'Guadalupeeeeeeee', 'Nate', 'Zoë', 'Quinn'];
+      const TEAM = (i, e, n) => ({ id: 't' + i, emoji: e, name: n });
+      const TEAMS8 = [TEAM(1,'🐉','THUNDERDOMES'), TEAM(2,'🦈','SHARKNADOOOOOOOS'), TEAM(3,'👑','MONARCHSSSSSSSSS'), TEAM(4,'⚡','VOLTAGE'), TEAM(5,'💀','BONECRUSHERS'), TEAM(6,'🔥','INFERNOOOOOOOOOO'), TEAM(7,'🌟','SUPERNOVAS'), TEAM(8,'🐺','NIGHTWOLVES')];
+
+      function showGame() {
+        document.body.classList.add('playing');
+        el('tv-game').hidden = false;
+        document.querySelector('.join-panel').hidden = true;
+        document.querySelector('.players-panel').hidden = true;
+        document.querySelector('h1').hidden = true;
+        document.querySelector('.subtitle').hidden = true;
+        el('status').hidden = true; // mirrors tv.js showGame
+      }
+      function show(id) { el(id).hidden = false; }
+      const ledHtml = (t) => `${t}<span class="timer-unit">s</span>`;
+      function ledger(a, b, ca, cb) {
+        el('tv-ledger').hidden = false;
+        el('tv-ledger').innerHTML =
+          `<div class="team"><span class="name" style="color:${ca}">${a}</span><span class="dot-strip">🔵🔵🔵⚪</span></div>` +
+          `<div class="team"><span class="name" style="color:${cb}">${b}</span><span class="dot-strip">🔴⚪⚪⚪</span></div>`;
+      }
+      function bracketHTML(n) {
+        // mirrors renderBracket markup for n teams (size = next pow2, byes to top seeds)
+        const size = n <= 2 ? 2 : n <= 4 ? 4 : 8;
+        const roundsCount = Math.log2(size);
+        const labels = roundsCount === 1 ? ['Final'] : roundsCount === 2 ? ['Semifinal', 'Final'] : ['Quarterfinal', 'Semifinal', 'Final'];
+        const host = el('tv-bracket'); host.hidden = false; host.innerHTML = '';
+        let teamIdx = 0;
+        for (let r = 0; r < roundsCount; r++) {
+          const col = document.createElement('div'); col.className = 'bkt-col';
+          col.innerHTML = `<div class="bkt-col-head">${labels[r]}</div>`;
+          const matches = size / Math.pow(2, r + 1);
+          for (let m = 0; m < matches; m++) {
+            const box = document.createElement('div');
+            box.className = 'bkt-match' + (r === 0 && m === 0 ? ' current' : '');
+            const mk = (slotN) => {
+              if (r > 0) return `<div class="bkt-slot"><span class="who">TBD</span><span class="games">(0)</span></div>`;
+              if (teamIdx < n) { const t = TEAMS8[teamIdx++]; return `<div class="bkt-slot"><span class="who" style="color:${TC(t.id.slice(1))}">${t.emoji} ${t.name}</span><span class="games">(${slotN})</span></div>`; }
+              return `<div class="bkt-slot"><span class="who">(bye)</span><span class="games">(0)</span></div>`;
+            };
+            box.innerHTML = mk(1) + mk(0);
+            col.appendChild(box);
+          }
+          host.appendChild(col);
+        }
+        const cc = document.createElement('div'); cc.className = 'bkt-col';
+        cc.innerHTML = `<div class="bkt-col-head">Champion</div><div class="bkt-champ"><div class="lbl">🏆</div><div class="who">TBD</div></div>`;
+        host.appendChild(cc);
+      }
+
+      const STATES = {
+        lobby() {
+          const ul = el('player-list');
+          LONGP.slice(0, 10).forEach((p, i) => { const li = document.createElement('li'); li.textContent = (i === 0 ? '⭐ ' : '') + p; ul.appendChild(li); });
+          el('status').hidden = false; el('status').textContent = '10 in the lobby';
+        },
+        config() {
+          STATES.lobby();
+          el('tv-menu').hidden = false;
+          el('tv-menu-list').innerHTML =
+            '<li>Game pool: <b>CLASSIC + HARD + GUESS</b></li>' +
+            '<li>Category: <b>Teams Tournament — 8 TEAMS</b></li>' +
+            '<li>Host — set up the night on your phone.</li>';
+          el('tv-menu-msg').textContent = 'Teams Tournament needs at least 3 players.';
+        },
+        title() {
+          STATES.lobby(); showGame();
+          const t = el('tv-title');
+          t.className = 'tv-title tone-target'; t.hidden = false;
+          el('tt-kicker').textContent = 'Setup';
+          el('tt-title').textContent = 'CAPTAIN SELECTION';
+          el('tt-hint').textContent = 'The wheel picks 8 captains';
+        },
+        wheel() {
+          showGame(); show('tv-wheel');
+          el('tv-match-banner').innerHTML = '<span class="tv-words">CAPTAIN 3 OF 8</span>';
+          const names = LONGP.slice(0, 10); const n = names.length, R = 42, winner = 4;
+          el('wheel-stage').innerHTML = '<div class="wh-track"></div>' + names.map((name, i) => {
+            const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+            const x = 50 + Math.cos(a) * R, y = 50 + Math.sin(a) * R;
+            const cls = i === winner ? ' win' : (i === 1 || i === 7 ? ' taken' : '');
+            return `<div class="wh-node${cls}" style="left:${x}%;top:${y}%">${name[0].toUpperCase()}</div>`;
+          }).join('') + `<div class="wh-center"><div><div class="wh-slot">CAPTAIN 3 OF 8</div><div class="wh-name landed" style="color:var(--win);text-shadow:var(--led-glow-win)">${names[winner]}</div></div></div>`;
+        },
+        draft() {
+          showGame(); show('tv-draft');
+          el('tv-match-banner').innerHTML = '<span class="tv-words">📋 THE DRAFT</span>';
+          const teams = TEAMS8.map((t, i) => {
+            const members = [`<div class="df-member cap">${LONGP[i]} · captain</div>`, i < 4 ? `<div class="df-member">${LONGP[i + 8]}</div>` : ''].join('');
+            return `<div class="df-team${i === 2 ? ' picking' : ''}" style="border-top-color:${TC(i + 1)};--team-c:${TC(i + 1)}"><div class="df-tname" style="color:${TC(i + 1)}">${t.emoji} ${t.name}</div>${members}</div>`;
+          }).join('');
+          const pool = LONGP.slice(12).map((p) => `<span class="df-chip">${p}</span>`).join('');
+          el('draft-stage').innerHTML =
+            `<div class="df-header"><span class="df-picker" style="color:${TC(3)}">▶ ${LONGP[2]} PICKS</span><span class="df-clock danger">4<span class="timer-unit">s</span></span></div>` +
+            `<div class="df-teams">${teams}</div>` +
+            `<div class="df-pool-label">Still in the pool</div><div class="df-pool">${pool}</div>`;
+          el('tv-game-msg').textContent = 'Captain — tap a player on your phone. Stall and the wheel picks for you.';
+        },
+        announce() {
+          showGame(); show('tv-draft');
+          el('tv-match-banner').innerHTML = '<span class="tv-words">📋 THE DRAFT</span>';
+          el('draft-stage').innerHTML =
+            `<div class="df-announce"><span style="color:${TC(2)}">${LONGP[1]}</span><span style="color:var(--text-dim)">DRAFTS</span><span>${LONGP[0]}</span></div>` +
+            `<div class="df-teams">${TEAMS8.slice(0, 4).map((t, i) => `<div class="df-team" style="border-top-color:${TC(i + 1)}"><div class="df-tname" style="color:${TC(i + 1)}">${t.emoji} ${t.name}</div><div class="df-member cap">${LONGP[i]} · captain</div></div>`).join('')}</div>`;
+        },
+        bracket2() { showGame(); el('tv-match-banner').innerHTML = '<span class="tv-words">🏆 THE BRACKET</span>'; bracketHTML(2); },
+        bracket4() { showGame(); el('tv-match-banner').innerHTML = '<span class="tv-words">🏆 THE BRACKET</span>'; bracketHTML(4); },
+        bracket6() { showGame(); el('tv-match-banner').innerHTML = '<span class="tv-words">🏆 THE BRACKET</span>'; bracketHTML(6); },
+        bracket8() {
+          showGame(); el('tv-match-banner').innerHTML = '<span class="tv-words">🏆 THE BRACKET</span>'; bracketHTML(8);
+          el('tv-rotation').textContent = 'Next up: 🐉 THUNDERDOMES vs 🦈 SHARKNADOOOOOOOS — first to 4 takes the game';
+          el('tv-game-msg').textContent = 'Host — tap Next on your phone to start this game.';
+        },
+        active() {
+          showGame(); show('tv-active');
+          ledger('🐉 THUNDERDOMES', '🦈 SHARKNADOOOOOOOS', TC(1), TC(2));
+          el('tv-match-banner').textContent = '🐉 THUNDERDOMES  3–1  🦈 SHARKNADOOOOOOOS   ·  first to 4';
+          el('tv-target').innerHTML = ledHtml('12.3');
+          el('tv-clocks').hidden = false;
+          el('tv-clocks').innerHTML =
+            `<div class="live-clock running"><div class="lc-team">THUNDERDOMES</div><div class="lc-name">${LONGP[0]}</div><span class="lc-time">88.88s</span></div>` +
+            `<div class="live-clock stopped"><div class="lc-team">SHARKNADOOOOOOOS</div><div class="lc-name">${LONGP[1]}</div><span class="lc-time">10.42s</span></div>`;
+          el('tv-game-msg').textContent = 'Active players are timing blind — the room can see the clocks!';
+        },
+        present() {
+          showGame(); show('tv-reveal');
+          el('reveal-head').innerHTML = '<span class="tv-words">HARD CLASSIC</span>';
+          el('reveal-sub').innerHTML = '<span class="tv-words">RACE: first to land INSIDE the zone wins</span>';
+          el('reveal-cards').innerHTML = ['STAND UP', 'READY'].map((s, i) =>
+            `<div class="reveal-card${i ? ' win' : ''}"><div class="rc-team tv-words">${s}</div><div class="rc-ava">${LONGP[i][0]}</div><div class="rc-name">${LONGP[i]}</div><div class="rc-dev">3W–1L tonight · Δavg 0.42s</div><div class="rc-dev tv-words">${i ? '✓' : 'face away from the TV'}</div></div>`).join('');
+          el('reveal-winner').textContent = 'Round starts when BOTH tap READY on their phones.';
+        },
+        reveal() {
+          showGame(); show('tv-reveal');
+          ledger('🐉 THUNDERDOMES', '🦈 SHARKNADOOOOOOOS', TC(1), TC(2));
+          el('reveal-head').textContent = 'ROUND COMPLETE';
+          el('reveal-sub').textContent = 'Recorded times';
+          el('reveal-cards').innerHTML =
+            `<div class="reveal-card win clutch"><div class="rc-team">THUNDERDOMES</div><div class="rc-name">${LONGP[0]}</div><div class="rc-time">12.34s</div><div class="rc-dev">DEVIATION +0.04s</div></div>` +
+            `<div class="reveal-card dnf"><div class="rc-team">SHARKNADOOOOOOOS</div><div class="rc-name">${LONGP[1]}</div><div class="rc-time">DNF</div><div class="rc-dev">DID NOT FINISH</div></div>`;
+          el('reveal-winner').className = 'reveal-winner clutch';
+          el('reveal-winner').textContent = `🏆 CLUTCH WINNER: ${LONGP[0]} (within 0.05s)`;
+          el('tv-game-msg').textContent = 'Host taps Next Round to lock the ledger dot in.';
+        },
+        hard() {
+          showGame(); show('tv-hard');
+          ledger('🐉 THUNDERDOMES', '🦈 SHARKNADOOOOOOOS', TC(1), TC(2));
+          el('tv-match-banner').textContent = 'HARD CLASSIC — TARGET 5.4s';
+          el('hard-head').textContent = '🏁 RACE TO THE ZONE';
+          el('hard-sub').textContent = `First to land in the zone wins — ${LONGP[0]} 7/13  ·  ${LONGP[1]} 6/13`;
+          el('hard-target').innerHTML = ledHtml('5.4');
+          el('hard-zone').textContent = 'HIT THE ZONE 5.40s – 5.49s';
+          el('hard-clock').hidden = false;
+          el('hard-clock').style.fontSize = 'clamp(1.4rem, 2.6vw, 2.6rem)';
+          el('hard-clock').style.whiteSpace = 'nowrap';
+          el('hard-clock').innerHTML = `<span style="margin:0 1.2rem">${LONGP[0]}: 88.88s</span><span style="margin:0 1.2rem">${LONGP[1]}: —</span>`;
+          el('hard-history').innerHTML =
+            `<li class="round-row dnf"><span class="row-name">❌ ${LONGP[0]}</span><span class="row-time">5.62s (Too Late)</span></li>` +
+            `<li class="round-row hit"><span class="row-name">🎯 ${LONGP[1]}</span><span class="row-time">5.44s (HIT!)</span></li>`;
+          el('hard-representing').textContent = `THUNDERDOMES: ${LONGP[0]}   vs   SHARKNADOOOOOOOS: ${LONGP[1]}`;
+        },
+        guess() {
+          showGame(); show('tv-guess');
+          ledger('🐉 THUNDERDOMES', '🦈 SHARKNADOOOOOOOS', TC(1), TC(2));
+          el('tv-match-banner').textContent = '🐉 THUNDERDOMES  3–1  🦈 SHARKNADOOOOOOOS   ·  GUESS THE CLOCK';
+          el('guess-head').textContent = 'THE REVEAL';
+          el('guess-actual').hidden = false;
+          el('guess-actual').innerHTML = `<span class="tv-words">Actual time</span>${ledHtml('8.87')}`;
+          el('guess-cards').innerHTML =
+            `<div class="reveal-card win"><div class="rc-team">THUNDERDOMES</div><div class="rc-name">${LONGP[0]}</div><div class="rc-time">8.90s</div><div class="rc-dev">DEVIATION +0.03s</div></div>` +
+            `<div class="reveal-card"><div class="rc-team">SHARKNADOOOOOOOS</div><div class="rc-name">${LONGP[1]}</div><div class="rc-time">12.00s</div><div class="rc-dev">DEVIATION +3.13s</div></div>`;
+          el('guess-winner').textContent = '🏆 THUNDERDOMES wins the round! (+1)';
+        },
+        awards() {
+          showGame(); show('tv-reveal');
+          el('tv-match-banner').innerHTML = '<span class="tv-words">🏅 TONIGHT\'S AWARDS</span>';
+          el('reveal-head').innerHTML = '<span class="tv-words">FASHIONABLY LATE</span>';
+          el('reveal-cards').innerHTML = `<div class="reveal-card win"><div class="rc-ava">${LONGP[0][0]}</div><div class="rc-name">${LONGP[0]}</div><div class="rc-dev">late on 71% of stops</div></div>`;
+          el('reveal-winner').textContent = '2 of 4';
+        },
+        champion() {
+          showGame(); show('tv-reveal');
+          el('tv-match-banner').innerHTML = '<span class="tv-words">🏆 TOURNAMENT CHAMPION 🏆</span>';
+          el('reveal-head').innerHTML = '<span style="font-size:2.2em;line-height:1">🐉</span>';
+          el('reveal-sub').innerHTML = '<span class="tv-words" style="font-size:1.6em;color:var(--win)">THUNDERDOMES</span>';
+          el('reveal-cards').innerHTML = LONGP.slice(0, 5).map((p) =>
+            `<div class="reveal-card win"><div class="rc-ava">${p[0]}</div><div class="rc-name">${p}</div><div class="rc-dev">5W–2L tonight · Δavg 0.31s</div></div>`).join('');
+          el('reveal-winner').textContent = 'Run: 3 matches won · champions of the night';
+          el('tv-game-msg').className = 'game-msg final';
+          el('tv-game-msg').textContent = 'Host — tap Next for the rematch menu.';
+        },
+      };
+
+      (STATES[state] || STATES.config)();
+
+      (async () => {
+        try { await document.fonts.ready; } catch {}
+        await new Promise((r) => setTimeout(r, 700)); // let entry animations settle
+        // Measure at REST: wait out finite animations (slam/pop overshoot is
+        // transient by design and clipped by the stage's overflow: clip).
+        try {
+          const settle = Promise.all(document.getAnimations()
+            .filter((a) => a.effect?.getTiming?.().iterations !== Infinity)
+            .map((a) => a.finished.catch(() => {})));
+          await Promise.race([settle, new Promise((r) => setTimeout(r, 1500))]);
+          // Whatever is still mid-flight, snap to rest so rects are measured at rest.
+          document.getAnimations()
+            .filter((a) => a.effect?.getTiming?.().iterations !== Infinity)
+            .forEach((a) => { try { a.finish(); } catch {} });
+        } catch {}
+        const bad = [];
+        document.querySelectorAll('body *').forEach((e) => {
+          if (e.id === 'fit-badge' || e.closest('#fit-badge')) return;
+          const r = e.getBoundingClientRect();
+          if (r.width === 0 && r.height === 0) return;
+          if (r.right > window.innerWidth + 1 || r.bottom > window.innerHeight + 1 || r.left < -1 || r.top < -1) {
+            const cs = getComputedStyle(e);
+            bad.push(`${e.id || e.className.toString().split(' ')[0] || e.tagName}@${Math.round(r.width)}x${Math.round(r.height)}/disp:${cs.display}/maxW:${cs.maxWidth}/minW:${cs.minWidth}`);
+          }
+        });
+        const sw = document.documentElement.scrollWidth, sh = document.documentElement.scrollHeight;
+        const over = sw > window.innerWidth || sh > window.innerHeight || bad.length;
+        const b = document.getElementById('fit-badge');
+        b.textContent = `${state} ${window.innerWidth}x${window.innerHeight} scroll:${sw}x${sh} ` + (over ? `OVERFLOW [${bad.slice(0, 3).join(', ')}]` : 'FIT');
+        b.classList.toggle('bad', !!over);
+        b.setAttribute('data-fit', over ? 'overflow' : 'fit');
+      })();
+    </script>
+  </body>
+</html>

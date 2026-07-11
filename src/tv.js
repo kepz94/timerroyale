@@ -30,10 +30,9 @@ const fmt = (ms) => (ms / 1000).toFixed(1);
 // Stage 1 precision: Classic/Hard targets ARE tenths, so they render to 1
 // decimal. (Guess targets are hundredths but never displayed as targets.)
 const fmtTarget = (g) => fmt(g.targetMs);
-// TR-56 identity: a hero LED readout — dim unlit "8" segments layered behind
-// the lit digits (real clocks always show their ghost segments).
-const ledHtml = (txt) =>
-  `<span class="led-wrap"><span class="led-ghost">${String(txt).replace(/[0-9]/g, '8')}</span><span>${txt}</span></span><span class="timer-unit">s</span>`;
+// Hero LED readout — lit digits only (ghost segments dropped Jul 2026: they
+// blurred the numbers; design-system typography law).
+const ledHtml = (txt) => `${txt}<span class="timer-unit">s</span>`;
 // Ledger-dot strip for a game score (filled / empty out of ROUNDS_TO_WIN_GAME).
 const dots = (won, filled, empty) => filled.repeat(Math.min(won, ROUNDS_TO_WIN_GAME)) + empty.repeat(Math.max(0, ROUNDS_TO_WIN_GAME - won));
 const db = initFirebase();
@@ -89,15 +88,17 @@ function render() {
   if (!hostId || inGame) { menu.hidden = true; return; }
   menu.hidden = false;
   const pool = Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
-  const catLabel = { pve: `PvE Arcade — ${config.pveMode === 'koth' ? `King of the Hill (first to ${config.kothN})` : 'Last Man Standing'}`, pvp: 'PvP Tournament', teams: `Teams Tournament — ${config.numTeams} teams` };
+  const catLabel = { pve: `PvE Arcade — ${config.pveMode === 'koth' ? `King of the Hill (first to ${config.kothN})` : 'Last Man Standing'}`, pvp: 'PvP Tournament', teams: `Teams Tournament — ${config.numTeams} TEAMS` };
+  // Config mirror (spec A2): every choice the host makes lands here, bolded,
+  // the moment it lands — the phone taps must visibly change the TV.
   const items = [
-    `Game pool:  ${pool.length ? pool.join(' + ') : '(none picked)'}`,
-    `Category:  ${config.category ? catLabel[config.category] : '(pick on the host phone)'}`,
+    `Game pool: <b>${pool.length ? pool.join(' + ').toUpperCase() : '(none picked)'}</b>`,
+    `Category: <b>${config.category ? catLabel[config.category] : '(pick on the host phone)'}</b>`,
     'Host — set up the night on your phone.'
   ];
   const list = el('tv-menu-list');
   list.innerHTML = '';
-  items.forEach((t) => { const li = document.createElement('li'); li.textContent = t; list.appendChild(li); });
+  items.forEach((t) => { const li = document.createElement('li'); li.innerHTML = t; list.appendChild(li); });
 }
 
 /* ---------------- state-screen helpers (TR-52) ---------------- */
@@ -111,11 +112,35 @@ function showScreen(s) {
   el('tv-reveal').hidden = s !== 'reveal';
   el('tv-hard').hidden = s !== 'hard';
   el('tv-guess').hidden = s !== 'guess';
+  el('tv-wheel').hidden = s !== 'wheel';
+  el('tv-draft').hidden = s !== 'draft';
   el('tv-bracket').hidden = s !== 'bracket';
   if (s !== 'bracket') el('tv-rotation').textContent = '';
-  if (s === 'reveal' || s === 'hard' || s === 'bracket' || s === 'guess') el('tv-standings').hidden = true;
-  if (s === 'bracket') { el('tv-ledger').hidden = true; el('tv-turn').hidden = true; }
+  if (s !== 'active') el('tv-standings').hidden = true;
+  if (s === 'bracket' || s === 'wheel' || s === 'draft') { el('tv-ledger').hidden = true; el('tv-turn').hidden = true; }
 }
+
+// TR-60 context beat: a full-screen title card + sting BEFORE every spectacle
+// (the room must always know what's about to happen). Resolves after `ms`.
+function titleCard({ kicker = '', title, hint = '', tone = 'green', ms = 2600 }) {
+  return new Promise((resolve) => {
+    const t = el('tv-title');
+    t.className = `tv-title tone-${tone}`;
+    el('tt-kicker').textContent = kicker;
+    el('tt-title').textContent = title;
+    el('tt-hint').textContent = hint;
+    t.hidden = false;
+    sting();
+    setTimeout(() => t.classList.add('leaving'), Math.max(400, ms - 400));
+    setTimeout(() => { t.hidden = true; t.classList.remove('leaving'); resolve(); }, ms);
+  });
+}
+
+// Team identity: draft team ids are t1..t8 — each gets a design-system color.
+const teamColor = (id) => {
+  const m = /^t([1-8])$/.exec(id || '');
+  return m ? `var(--team-${m[1]})` : '';
+};
 
 // TR-52 §5: the Hard Classic retry-loop screen — live attempt history while the
 // active rep retries, then the "TARGET MATCHED" success layout. teamCtx (Teams)
@@ -156,7 +181,7 @@ function renderHard(g, teamCtx) {
     const hist = el('hard-history'); hist.innerHTML = '';
     ids.forEach((id) => {
       const name = g.players[id]?.name || '';
-      (g.attempts[id] || []).slice(-4).forEach((a) => {
+      (g.attempts[id] || []).slice(-3).forEach((a) => {
         const li = document.createElement('li'); li.className = 'round-row ' + (a.hit ? 'hit' : 'dnf');
         li.innerHTML = `<span class="row-name">${a.hit ? '🎯' : '❌'} ${teamNameFor(id) || name}</span><span class="row-time">${fmtS2(a.elapsedMs)}s ${a.hit ? '(HIT!)' : (a.early ? '(Too Early)' : '(Too Late)')}</span>`;
         hist.appendChild(li);
@@ -171,7 +196,8 @@ function renderHard(g, teamCtx) {
     if (hc) {
       hc.hidden = false;
       hc.removeAttribute('data-clock-start');
-      hc.style.fontSize = 'clamp(1.6rem, 4vw, 4rem)';
+      hc.style.fontSize = 'clamp(1.4rem, 2.6vw, 2.6rem)';
+      hc.style.whiteSpace = 'nowrap';
       hc.innerHTML = ids.map((id) => {
         const p = g.players[id] || {};
         const t = p.state === 'running' && p.startHostTs
@@ -188,12 +214,12 @@ function renderHard(g, teamCtx) {
   }
 }
 
-function showLedger(aName, aWon, bName, bWon) {
+function showLedger(aName, aWon, bName, bWon, aColor = '', bColor = '') {
   const l = el('tv-ledger');
   l.hidden = false;
   l.innerHTML =
-    `<div class="team"><span class="name">${aName}</span><span class="dot-strip">${dots(aWon, '🔵', '⚪')}</span></div>` +
-    `<div class="team"><span class="name">${bName}</span><span class="dot-strip">${dots(bWon, '🔴', '⚪')}</span></div>`;
+    `<div class="team"><span class="name"${aColor ? ` style="color:${aColor}"` : ''}>${aName}</span><span class="dot-strip">${dots(aWon, '🔵', '⚪')}</span></div>` +
+    `<div class="team"><span class="name"${bColor ? ` style="color:${bColor}"` : ''}>${bName}</span><span class="dot-strip">${dots(bWon, '🔴', '⚪')}</span></div>`;
 }
 
 // Live TV clocks (Team tournaments): tick any element carrying data-clock-start
@@ -243,6 +269,10 @@ function beep(freq, durMs, vol = 0.22) {
   o.start(t); o.stop(t + durMs / 1000);
 }
 function chime() { beep(660, 120); setTimeout(() => beep(990, 200), 130); }
+// Title-card / slot-in sting: a bright two-note hit.
+function sting() { beep(520, 90, 0.18); setTimeout(() => beep(780, 160, 0.18), 95); }
+// Win arpeggio — a wheel landing / celebration beat.
+function winArp() { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 140, 0.2), i * 110)); }
 
 // Scheduled tone (relative start, for rolls/sweeps).
 function noteAt(freq, startS, durMs, vol = 0.2, type = 'square') {
@@ -336,7 +366,7 @@ function renderGuess(g, teamCtx) {
         drawCards(true);
         el('guess-winner').textContent = g.winner ? `🏆 ${labelFor(g.winner.playerId, ids.indexOf(g.winner.playerId))} wins the round! (+1)` : 'No winner';
         drumroll(); // cinematic reveal (ends on a chime)
-      }, 2200);
+      }, 3000);
     }
   } else if (g.status === 'guessing') {
     guessRevealKey = null; clearTimeout(guessRevealTimer);
@@ -654,36 +684,53 @@ function launchTeams() {
   runCaptainWheels(roster);
 }
 
-/* ---- Stage 3a (TR-57): the wheels. One spin per captain slot with a
-   celebration beat, then a second wheel — captains only — for draft order.
-   Winners are pre-drawn; the wheel is theatre, the fairness is real. ---- */
-function spinWheel(title, names, winnerName, onDone) {
-  showScreen('reveal');
-  el('tv-match-banner').innerHTML = `<span class="tv-words">${title}</span>`;
-  el('reveal-head').textContent = '';
-  el('reveal-sub').textContent = '';
-  el('reveal-cards').innerHTML = '';
-  const big = el('reveal-winner');
-  big.classList.remove('clutch');
-  let i = Math.floor(Math.random() * names.length);
-  let delay = 70;
-  const tick = () => {
-    if (delay < 620) {
-      big.textContent = names[i % names.length];
-      i += 1;
-      beep(520, 28, 0.12);
-      delay *= 1.18;
-      setTimeout(tick, delay);
-    } else {
-      big.textContent = `🎉 ${winnerName}`;
-      chime();
-      setTimeout(onDone, 1500); // celebration beat
+/* ---- Stage 3a (TR-57, rebuilt for TR-60): the wheels. A ring of avatar
+   nodes; the selector sweeps at least two full loops and DECELERATES onto the
+   winner (ease-out ticks, 60→430ms), which then HOLDS with a celebration slam
+   before anything advances. Winners are pre-drawn; the wheel is theatre, the
+   fairness is real. ---- */
+function spinWheelRing({ slotLabel, entries, winnerIdx, takenIdxs = new Set() }, onDone) {
+  showScreen('wheel');
+  el('tv-match-banner').innerHTML = `<span class="tv-words">${slotLabel}</span>`;
+  el('tv-game-msg').classList.remove('final');
+  el('tv-game-msg').textContent = '';
+  const stage = el('wheel-stage');
+  // No hard cuts between consecutive spins: each ring build fades in.
+  stage.style.animation = 'none'; void stage.offsetWidth; stage.style.animation = 'stateIn .45s ease-out both';
+  const n = entries.length;
+  const R = 42; // % radius from center
+  stage.innerHTML = '<div class="wh-track"></div>' + entries.map((name, i) => {
+    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+    const x = 50 + Math.cos(a) * R, y = 50 + Math.sin(a) * R;
+    return `<div class="wh-node${takenIdxs.has(i) ? ' taken' : ''}" style="left:${x}%;top:${y}%">${(name[0] || '?').toUpperCase()}</div>`;
+  }).join('') + `<div class="wh-center"><div><div class="wh-slot">${slotLabel}</div><div class="wh-name" id="wh-name">…</div></div></div>`;
+  const nodes = [...stage.querySelectorAll('.wh-node')];
+  const start = Math.floor(Math.random() * n);
+  const ticks = 2 * n + ((winnerIdx - start) % n + n) % n; // ≥2 loops, ends ON the winner
+  let j = 0;
+  const step = () => {
+    nodes.forEach((node, i) => node.classList.toggle('sel', i === (start + j) % n));
+    beep(520, 26, 0.12);
+    if (j >= ticks) {
+      const winEl = nodes[winnerIdx];
+      winEl.classList.remove('sel'); winEl.classList.add('win');
+      const nm = el('wh-name');
+      nm.textContent = entries[winnerIdx];
+      nm.classList.add('landed');
+      nm.style.color = 'var(--win)';
+      nm.style.textShadow = 'var(--led-glow-win)';
+      winArp();
+      setTimeout(onDone, 2800); // the landing HOLDS before anything advances
+      return;
     }
+    const t = j / ticks;
+    j += 1;
+    setTimeout(step, 60 + 370 * t * t); // ease-out deceleration
   };
-  tick();
+  step();
 }
 
-function runCaptainWheels(roster) {
+async function runCaptainWheels(roster) {
   const t = Math.max(2, Math.min(config.numTeams, roster.length));
   const capIds = [...roster].sort(() => Math.random() - 0.5).slice(0, t).map((p) => p.playerId);
   const order = [...capIds].sort(() => Math.random() - 0.5);
@@ -691,20 +738,30 @@ function runCaptainWheels(roster) {
   dbSet(dbRef(db, `sessions/${lobbyId}/match`), { type: 'wheel', status: 'spinning' }).catch(() => {});
   const rosterNames = roster.map((r) => r.name);
   const capNames = order.map((id) => nameOf(id));
+  await titleCard({ kicker: 'Setup', title: 'CAPTAIN SELECTION', hint: `The wheel picks ${t} captains`, tone: 'target' });
+  const taken = new Set();
   let slot = 0;
   const nextCap = () => {
     if (slot < capIds.length) {
+      const idx = roster.findIndex((r) => r.playerId === capIds[slot]);
       slot += 1;
-      spinWheel(`CAPTAIN WHEEL — SLOT ${slot} OF ${capIds.length}`, rosterNames, nameOf(capIds[slot - 1]), nextCap);
+      spinWheelRing({
+        slotLabel: `CAPTAIN ${slot} OF ${capIds.length}`,
+        entries: rosterNames, winnerIdx: idx, takenIdxs: new Set(taken),
+      }, () => { taken.add(idx); nextCap(); });
       return;
     }
     // Second wheel: draft order among the captains.
-    spinWheel('DRAFT ORDER — WHO PICKS FIRST?', capNames, capNames[0], () => {
-      draftState = createDraftState(roster, t, Math.random, order);
-      logTransition('tv', 'wheels', 'draft-start', `${draftState.teams.length} teams, order ${capNames.join(' > ')}`);
-      publishDraft(true);
-      renderDraft();
-    });
+    (async () => {
+      await titleCard({ kicker: 'Setup', title: 'DRAFT ORDER', hint: 'Who picks first?', tone: 'green' });
+      spinWheelRing({ slotLabel: 'FIRST PICK', entries: capNames, winnerIdx: 0 }, async () => {
+        draftState = createDraftState(roster, t, Math.random, order);
+        logTransition('tv', 'wheels', 'draft-start', `${draftState.teams.length} teams, order ${capNames.join(' > ')}`);
+        await titleCard({ kicker: 'Setup', title: 'THE DRAFT', hint: 'Captains, build your squad — 20 seconds a pick', tone: 'green' });
+        publishDraft(true);
+        renderDraft();
+      });
+    })();
   };
   nextCap();
 }
@@ -713,14 +770,14 @@ const nameOf = (pid) => (players.find((p) => p.playerId === pid) || {}).name || 
 
 let nameDeadline = null, nameTimer = null, nameTicker = null; // 2-minute customization cap (A6)
 
-function publishDraft(resetClock) {
+function publishDraft(resetClock, announce = null) {
   if (resetClock && draftState.status === 'drafting') { pickDeadline = Date.now() + 20000; startClock(); }
   if (draftState.status !== 'drafting') stopClock();
   // Entering the naming phase arms the 2-minute cap: on expiry, auto-fill
   // "Team {Captain}" + a random unused logo and start the tournament.
   if (draftState.status === 'naming' && !nameDeadline) {
     nameDeadline = Date.now() + 120000;
-    nameTicker = setInterval(() => { if (draftState) renderDraft(); }, 1000);
+    nameTicker = setInterval(() => { if (draftState && !draftAnnounce) renderDraft(); }, 1000);
     nameTimer = setTimeout(() => {
       if (!draftState || draftState.status !== 'naming') return;
       autoFillCustomization(draftState, nameOf);
@@ -730,6 +787,7 @@ function publishDraft(resetClock) {
   }
   dbSet(dbRef(db, `sessions/${lobbyId}/match`), {
     ...draftState,
+    announce, // spec A5: every pick announced on every phone
     deadline: draftState.status === 'drafting' ? pickDeadline : (nameDeadline || null),
   }).catch(() => {});
 }
@@ -737,14 +795,41 @@ function startClock() {
   stopClock();
   draftClock = setInterval(() => {
     if (!draftState || draftState.status !== 'drafting') { stopClock(); return; }
-    if (Date.now() >= pickDeadline) { autoPick(draftState); publishDraft(true); }
+    if (Date.now() >= pickDeadline) {
+      const team = draftState.teams[draftState.turn];
+      const r = autoPick(draftState);
+      if (r.ok) { announcePick(team, r.playerId); return; }
+    }
     renderDraft();
   }, 500);
 }
 function stopClock() { if (draftClock) { clearInterval(draftClock); draftClock = null; } }
-function finalizeDraft() {
+
+// TR-60: every pick is a produced moment — a full-screen announce slam that
+// HOLDS ~3.2s (clock paused) before the next pick clock starts. The announce
+// also rides on the match node so every phone narrates it (spec A5).
+let draftAnnounce = null, draftAnnounceTimer = null;
+function announcePick(team, playerId) {
+  stopClock();
+  clearTimeout(draftAnnounceTimer);
+  draftAnnounce = {
+    capName: nameOf(team.captainId), playerName: nameOf(playerId), playerId,
+    teamId: team.id, color: teamColor(team.id) || 'var(--primary)',
+  };
+  sting();
+  publishDraft(false, { cap: draftAnnounce.capName, player: draftAnnounce.playerName });
+  renderDraft();
+  draftAnnounceTimer = setTimeout(() => {
+    draftAnnounce = null;
+    if (!draftState) return;
+    publishDraft(draftState.status === 'drafting');
+    renderDraft();
+  }, 3200);
+}
+async function finalizeDraft() {
   stopClock();
   clearTimeout(nameTimer); clearInterval(nameTicker); nameDeadline = null;
+  clearTimeout(draftAnnounceTimer); draftAnnounce = null;
   const teams = draftTeams(draftState, nameOf);
   lastTeams = teams; // Rematch (D3) reuses these
   draftState = null;
@@ -752,49 +837,76 @@ function finalizeDraft() {
   bracket = tourney.bracket;
   dbSet(dbRef(db, `sessions/${lobbyId}/match`), { type: 'tournament', status: 'playing' }).catch(() => {});
   logTransition('tv', 'draft', 'tournament-start', `${teams.length} teams`);
+  await titleCard({ kicker: 'Setup', title: 'DRAFT COMPLETE', hint: 'The bracket awaits…', tone: 'gold', ms: 3000 });
   revealBracket(() => nextTourneyGame());
 }
 
-// Stage 3a bracket reveal (A7): the empty skeleton appears, then each team
-// slots into its seed one by one with a sting — every matchup its own moment.
-function revealBracket(done) {
+// Stage 3a bracket reveal (A7, repaced for TR-60): a title card frames the
+// moment, the empty skeleton appears and HOLDS, then each team slots into its
+// seed one by one with a sting — every matchup its own moment.
+async function revealBracket(done) {
   const ids = bracket.entrants.map((e) => e.id);
   const shown = new Set();
+  await titleCard({ kicker: 'The night takes shape', title: 'THE BRACKET', hint: 'Every matchup, revealed', tone: 'target' });
   el('tv-match-banner').innerHTML = '<span class="tv-words">🏆 THE BRACKET</span>';
   el('tv-game-msg').classList.remove('final');
   el('tv-game-msg').textContent = '';
   renderBracket(shown);
   let i = 0;
   const step = () => {
-    if (i >= ids.length) { setTimeout(done, 1700); return; }
+    if (i >= ids.length) { setTimeout(done, 2400); return; }
     shown.add(ids[i]); i += 1;
-    renderBracket(shown);
-    chime(); // the sting
-    setTimeout(step, 950);
+    renderBracket(shown, ids[i - 1]);
+    sting();
+    setTimeout(step, 1600);
   };
-  setTimeout(step, 1100);
+  setTimeout(step, 1600);
 }
+
+// The draft board (rebuilt for TR-60): picker callout + LED pick clock,
+// color-accented team cards, pool chips, full-screen announce slam per pick.
 function renderDraft() {
   if (!draftState) return;
-  showScreen('active');
-  el('tv-active').hidden = true; el('tv-reveal').hidden = true; el('tv-bracket').hidden = true;
-  el('tv-ledger').hidden = true; el('tv-standings').hidden = false;
-  el('tv-match-banner').textContent = draftState.status === 'drafting' ? '📋 CAPTAIN DRAFT' : '🏷️ NAME YOUR TEAMS';
-  const st = el('tv-standings'); st.innerHTML = '';
-  draftState.teams.forEach((t, i) => {
-    const li = document.createElement('li');
-    li.className = 'standing alive';
-    const turn = draftState.status === 'drafting' && i === draftState.turn ? '▶ ' : '';
+  showScreen('draft');
+  el('tv-match-banner').innerHTML = `<span class="tv-words">${draftState.status === 'drafting' ? '📋 THE DRAFT' : '🏷️ NAME YOUR TEAMS'}</span>`;
+  const stage = el('draft-stage');
+  const dl = draftState.status === 'drafting' ? pickDeadline : nameDeadline;
+  const secs = dl ? Math.max(0, Math.ceil((dl - Date.now()) / 1000)) : 120;
+  let head;
+  if (draftAnnounce) {
+    head = `<div class="df-announce"><span style="color:${draftAnnounce.color}">${draftAnnounce.capName}</span>`
+      + '<span style="color:var(--text-dim)">DRAFTS</span>'
+      + `<span>${draftAnnounce.playerName}</span></div>`;
+  } else if (draftState.status === 'drafting') {
+    const capTeam = draftState.teams[draftState.turn];
+    const color = teamColor(capTeam.id) || 'var(--primary)';
+    head = `<div class="df-header"><span class="df-picker" style="color:${color}">▶ ${nameOf(capTeam.captainId)} PICKS</span>`
+      + `<span class="df-clock${secs <= 5 ? ' danger' : ''}">${secs}<span class="timer-unit">s</span></span></div>`;
+  } else {
+    head = '<div class="df-header"><span class="df-picker">CAPTAINS — NAME YOUR TEAMS</span>'
+      + `<span class="df-clock">${secs}<span class="timer-unit">s</span></span></div>`;
+  }
+  const teams = draftState.teams.map((t, i) => {
+    const color = teamColor(t.id) || 'var(--primary)';
+    const picking = draftState.status === 'drafting' && i === draftState.turn && !draftAnnounce;
+    const members = t.members.map((pid) => {
+      const isCap = pid === t.captainId;
+      const justPicked = draftAnnounce && draftAnnounce.playerId === pid && draftAnnounce.teamId === t.id;
+      return `<div class="df-member${isCap ? ' cap' : ''}${justPicked ? ' new' : ''}"${justPicked ? ` style="color:${color}"` : ''}>${nameOf(pid)}${isCap ? ' · captain' : ''}</div>`;
+    }).join('');
     const logoNote = draftState.status === 'naming' && !t.emoji && t.logoPickerId
-      ? ` · ${nameOf(t.logoPickerId)} picks the logo` : '';
-    li.textContent = `${turn}${t.emoji || '▢'} ${t.name} — cap ${nameOf(t.captainId)}: ${t.members.map(nameOf).join(', ')}${logoNote}`;
-    st.appendChild(li);
-  });
-  if (draftState.pool.length) { const li = document.createElement('li'); li.className = 'standing out'; li.textContent = `Available: ${draftState.pool.map(nameOf).join(', ')}`; st.appendChild(li); }
+      ? `<div class="df-member">🎨 ${nameOf(t.logoPickerId)} picks the logo</div>` : '';
+    return `<div class="df-team${picking ? ' picking' : ''}" style="border-top-color:${color};--team-c:${color}">`
+      + `<div class="df-tname" style="color:${color}">${t.emoji || ''} ${t.name}</div>${members}${logoNote}</div>`;
+  }).join('');
+  const pool = draftState.pool.length
+    ? `<div class="df-pool-label">Still in the pool</div><div class="df-pool">${draftState.pool.map((pid) => `<span class="df-chip">${nameOf(pid)}</span>`).join('')}</div>`
+    : '';
+  stage.innerHTML = head + `<div class="df-teams">${teams}</div>` + pool;
   el('tv-game-msg').classList.remove('final');
   el('tv-game-msg').textContent = draftState.status === 'drafting'
-    ? `${nameOf(draftState.teams[draftState.turn].captainId)} is picking… (auto-pick in ${Math.max(0, Math.ceil((pickDeadline - Date.now()) / 1000))}s)`
-    : `Captains name the team · logo pickers choose the icon — auto-locks in ${nameDeadline ? Math.max(0, Math.ceil((nameDeadline - Date.now()) / 1000)) : 120}s (host can start sooner).`;
+    ? (draftAnnounce ? '' : 'Captain — tap a player on your phone. Stall and the wheel picks for you.')
+    : `Captains type the name · logo pickers tap the icon — auto-locks in ${secs}s (host can start sooner).`;
 }
 
 function startTeamMatch() {
@@ -820,7 +932,7 @@ function startTeamMatch() {
 
 function renderTeamRound(g, ctx) {
   noteRoundOver(g);
-  showLedger(ctx.teamA.name, ctx.winsA, ctx.teamB.name, ctx.winsB);
+  showLedger(ctx.teamA.name, ctx.winsA, ctx.teamB.name, ctx.winsB, teamColor(ctx.teamA.id), teamColor(ctx.teamB.id));
   if (g.mode === 'hard') { renderHard(g, ctx); return; }
   if (g.mode === 'guess') { renderGuess(g, ctx); return; }
   el('tv-match-banner').textContent = `${ctx.teamA.name}  ${ctx.winsA}–${ctx.winsB}  ${ctx.teamB.name}   ·  first to ${ctx.n}`;
@@ -939,9 +1051,10 @@ function renderElim(m) {
 
 // TR-52 State 6: the tournament bracket tree (columns per round + a champion
 // column). Each slot shows the entrant and its GAME-win count in parentheses.
-function renderBracket(mask) {
+function renderBracket(mask, justRevealedId) {
   // mask (Stage 3a reveal): a Set of entrant ids already revealed — everyone
   // else renders as a mystery slot. Omitted = the normal full bracket.
+  // justRevealedId: the entrant landing THIS beat — its match box pops in.
   showScreen('bracket');
   const host = el('tv-bracket'); host.innerHTML = '';
   bracket.rounds.forEach((round, ri) => {
@@ -951,12 +1064,13 @@ function renderBracket(mask) {
     round.forEach((mm) => {
       const box = document.createElement('div');
       box.className = 'bkt-match' + (mm === curMatch && !mm.winner && !mask ? ' current' : '');
+      if (justRevealedId && ((mm.a && mm.a.id === justRevealedId) || (mm.b && mm.b.id === justRevealedId))) box.classList.add('slot-in');
       const slot = (ent, games, isWinner) => {
         const s = document.createElement('div'); s.className = 'bkt-slot' + (isWinner ? ' winner' : '');
-        const name = ent
-          ? (mask && !mask.has(ent.id) ? '❓' : ent.name)
-          : (mm.bye ? '(bye)' : 'TBD');
-        s.innerHTML = `<span class="who">${name}</span><span class="games">(${games})</span>`;
+        const revealed = ent && !(mask && !mask.has(ent.id));
+        const name = ent ? (revealed ? ent.name : '❓') : (mm.bye ? '(bye)' : 'TBD');
+        const color = revealed && !isWinner ? teamColor(ent.id) : '';
+        s.innerHTML = `<span class="who"${color ? ` style="color:${color}"` : ''}>${name}</span><span class="games">(${games})</span>`;
         return s;
       };
       box.appendChild(slot(mm.a, mm.gamesA, !!(mm.winner && mm.a && mm.winner.id === mm.a.id)));
@@ -975,10 +1089,11 @@ function renderBracket(mask) {
 /* ---- Stage 3b (TR-58): awards ceremony -> champion trophy -> rematch ---- */
 
 // D1: top-4 titles from the tonight ledger, one ~4s auto-advancing card each.
-function runAwardsCeremony(done) {
+async function runAwardsCeremony(done) {
   const awards = computeAwards(night, 4);
   if (!awards.length) { done(); return; }
   dbSet(dbRef(db, `sessions/${lobbyId}/game`), { mode: 'awards', status: 'awards', updatedAt: Date.now() }).catch(() => {});
+  await titleCard({ kicker: 'Ceremony', title: "TONIGHT'S AWARDS", hint: 'Four titles. One night.', tone: 'gold' });
   showScreen('reveal');
   el('tv-ledger').hidden = true;
   el('tv-match-banner').innerHTML = '<span class="tv-words">🏅 TONIGHT\'S AWARDS</span>';
@@ -1103,7 +1218,11 @@ async function boot() {
   });
   consumeEvents(db, lobbyId, (ev) => {
     if (draftState) {
-      if (ev.type === 'draft-pick' && ev.pick) { if (applyPick(draftState, ev.playerId, ev.pick).ok) { publishDraft(true); renderDraft(); } return; }
+      if (ev.type === 'draft-pick' && ev.pick) {
+        const team = draftState.status === 'drafting' ? draftState.teams[draftState.turn] : null;
+        if (team && applyPick(draftState, ev.playerId, ev.pick).ok) announcePick(team, ev.pick);
+        return;
+      }
       if (ev.type === 'team-name' && typeof ev.name === 'string') { const t = draftState.teams.find((x) => x.captainId === ev.playerId); if (t && ev.name.trim()) { t.name = ev.name.trim().slice(0, 16); publishDraft(false); renderDraft(); } return; }
       if (ev.type === 'team-emoji' && ev.emoji) { if (applyLogo(draftState, ev.playerId, ev.emoji).ok) { publishDraft(false); renderDraft(); } return; }
       if (ev.type === 'draft-done' && ev.playerId === hostId && draftState.status === 'naming') { finalizeDraft(); return; }

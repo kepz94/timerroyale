@@ -17,11 +17,8 @@ const code = parts[1] ? parts[1].toUpperCase() : null;
 
 const fmt2 = (ms) => (ms / 1000).toFixed(2);
 const signed = (ms) => { const x = ms / 1000; return (x > 0 ? '+' : x < 0 ? '-' : '') + Math.abs(x).toFixed(2); };
-// TR-59: LED target readout with ghost segments (Classic/Hard targets are tenths).
-const ledTarget = (ms) => {
-  const txt = (ms / 1000).toFixed(1);
-  return `<span class="led-wrap"><span class="led-ghost">${txt.replace(/[0-9]/g, '8')}</span><span>${txt}</span></span><span class="timer-unit">s</span>`;
-};
+// TR-59: LED target readout, lit digits only (Classic/Hard targets are tenths).
+const ledTarget = (ms) => `${(ms / 1000).toFixed(1)}<span class="timer-unit">s</span>`;
 
 let currentUser = null;
 let me = null;
@@ -79,6 +76,10 @@ function sendCfg(mutate) {
     ? { pool: { ...cfgState.pool }, category: cfgState.category ?? null, pveMode: cfgState.pveMode, kothN: cfgState.kothN, numTeams: cfgState.numTeams }
     : { pool: { classic: true, hard: false, guess: false }, category: null, pveMode: 'koth', kothN: 5, numTeams: 2 };
   mutate(c);
+  // Optimistic feedback (TR-60): reflect the tap INSTANTLY on this phone; the
+  // TV's published copy remains truth and overwrites when it round-trips.
+  cfgState = c;
+  renderPhase();
   sendEvent(db, code, me.playerId, 'cfg', { config: c });
 }
 
@@ -187,8 +188,14 @@ function renderDraftUI() {
   const host = hostPlayer(); const iAmHost = host && me && host.playerId === me.playerId;
   el('draft-start-btn').hidden = !(iAmHost && d.status === 'naming');
   const secs = d.deadline ? Math.max(0, Math.ceil((d.deadline - Date.now()) / 1000)) : 0;
-  el('turn-banner').textContent = d.status === 'drafting'
-    ? (isMyPick ? `📋 Your pick! (${secs}s) Tap a player below.` : `📋 Draft in progress — ${nameOfLocal(d.teams?.[d.turn]?.captainId)} picking… (${secs}s)`)
+  // Spec A5: every pick is announced on every phone, with personal status —
+  // drafted players learn their team, pool players know they're still in.
+  const myTeam = (d.teams || []).find((t) => (t.members || []).includes(me?.playerId));
+  el('turn-banner').textContent = d.announce
+    ? (d.announce.player === me?.name ? `🎉 YOU'VE been drafted by ${d.announce.cap}!` : `📣 ${d.announce.cap} drafts ${d.announce.player}!`)
+    : d.status === 'drafting'
+    ? (isMyPick ? `📋 Your pick! (${secs}s) Tap a player below.`
+      : `📋 ${nameOfLocal(d.teams?.[d.turn]?.captainId)} is picking… (${secs}s)${myTeam ? ` · You're on ${myTeam.name}` : ' · You\'re in the pool'}`)
     : (naming && myLogoTeam ? `🏷️ Name your team AND pick its logo. (${secs}s)`
       : naming ? `🏷️ Name your team — your logo picker chooses the icon. (${secs}s)`
       : myLogoTeam ? `🎨 YOU pick the team logo — tap an icon. (${secs}s)`
@@ -204,7 +211,11 @@ el('join-form').addEventListener('submit', async (e) => {
   stampUid(); setupPresence(db, code, me.playerId); onJoined();
 });
 
-function onJoined() { el('join-form').hidden = true; el('joined-panel').hidden = false; el('joined-name').textContent = me.name; el('status').textContent = "You're in — watch the TV!"; renderPhase(); }
+// stampUid here too: on the RESTORE path (reopening the lobby URL) auth often
+// resolves before `me` exists, so watchAuth's stamp is a no-op — without this
+// the TV never learns who the host is and silently drops every cfg/start
+// event (the family-night dead-config root cause).
+function onJoined() { el('join-form').hidden = true; el('joined-panel').hidden = false; el('joined-name').textContent = me.name; el('status').textContent = "You're in — watch the TV!"; stampUid(); renderPhase(); }
 
 const hostPlayer = () => players.find((p) => p.uid);
 
