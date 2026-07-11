@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDraftState, applyPick, autoPick, currentCaptain, isCaptain, draftTeams } from '../src/draft.js';
+import { createDraftState, applyPick, autoPick, currentCaptain, isCaptain, draftTeams, LOGOS, applyLogo, autoFillCustomization } from '../src/draft.js';
 
 const players = (n) => Array.from({ length: n }, (_, i) => ({ playerId: `p${i + 1}`, name: `P${i + 1}` }));
 const noShuffle = () => 0.5; // stable order (Array.sort with constant comparator keeps order-ish)
@@ -11,7 +11,7 @@ test('createDraftState: captains seeded, rest in pool, sizes', () => {
   assert.equal(s.status, 'drafting');
   assert.equal(s.pool.length, 3); // 5 - 2 captains
   assert.ok(s.teams.every((t) => t.members.length === 1 && t.captainId === t.members[0]));
-  assert.equal(s.teams[0].emoji, '⭐');
+  assert.equal(s.teams[0].emoji, null); // Stage 3a: logos are PICKED, not defaulted
 });
 
 test('createDraftState: no pool => straight to naming', () => {
@@ -49,4 +49,45 @@ test('helpers: currentCaptain / isCaptain / draftTeams', () => {
   assert.equal(currentCaptain(s), s.teams[0].captainId);
   const teams = draftTeams(s, (pid) => pid.toUpperCase());
   assert.ok(teams[0].members.every((m) => m.name === m.playerId.toUpperCase()));
+});
+
+/* ---- Stage 3a (TR-57): wheels, split-role customization, auto-fill ---- */
+
+test('wheel-chosen captains seed teams in draft order', () => {
+  const s = createDraftState(players(5), 2, noShuffle, ['p4', 'p2']);
+  assert.equal(s.teams[0].captainId, 'p4');
+  assert.equal(s.teams[1].captainId, 'p2');
+  assert.deepEqual(s.pool.sort(), ['p1', 'p3', 'p5']);
+});
+
+test('logo picker is a random NON-captain; solo team falls back to captain', () => {
+  const s = createDraftState(players(4), 2, noShuffle);
+  while (s.status === 'drafting') autoPick(s, () => 0);
+  s.teams.forEach((t) => {
+    assert.ok(t.logoPickerId);
+    if (t.members.length > 1) assert.notEqual(t.logoPickerId, t.captainId);
+  });
+});
+
+test('applyLogo: pool-only, picker-only, uniqueness enforced', () => {
+  const s = createDraftState(players(4), 2, noShuffle);
+  while (s.status === 'drafting') autoPick(s, () => 0);
+  const [a, b] = s.teams;
+  assert.equal(applyLogo(s, a.captainId === a.logoPickerId ? 'zzz' : a.captainId, LOGOS[0]).ok, false); // not the picker
+  assert.equal(applyLogo(s, a.logoPickerId, 'not-an-icon').ok, false);
+  assert.equal(applyLogo(s, a.logoPickerId, LOGOS[0]).ok, true);
+  assert.equal(applyLogo(s, b.logoPickerId, LOGOS[0]).ok, false); // taken
+  assert.equal(applyLogo(s, b.logoPickerId, LOGOS[1]).ok, true);
+});
+
+test('autoFillCustomization: Team {Captain} + random unused logo', () => {
+  const s = createDraftState(players(4), 2, noShuffle);
+  while (s.status === 'drafting') autoPick(s, () => 0);
+  applyLogo(s, s.teams[0].logoPickerId, LOGOS[2]);
+  autoFillCustomization(s, (id) => id.toUpperCase(), () => 0);
+  assert.ok(s.teams[0].name.startsWith('Team '));
+  assert.equal(s.teams[0].emoji, LOGOS[2]); // kept
+  assert.ok(LOGOS.includes(s.teams[1].emoji));
+  assert.notEqual(s.teams[1].emoji, LOGOS[2]); // unused only
+  assert.ok(LOGOS.length >= 10);
 });

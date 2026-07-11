@@ -20,7 +20,7 @@ import { createBracket, reportGameWin, activeMatches, isComplete, roundLabel } f
 import { createTournament, restoreTournament, serializeTournament, ROUNDS_TO_WIN_GAME } from './tournament.js';
 import { createClassicTargets } from './targets.js';
 import { createTeamGame, distributeTeams } from './teamgame.js';
-import { createDraftState, applyPick, autoPick, draftTeams } from './draft.js';
+import { createDraftState, applyPick, autoPick, draftTeams, applyLogo, autoFillCustomization } from './draft.js';
 import { blankNight, recordRound, roundEntries, tonightLine } from './stats.js';
 import { ref as dbRef, set as dbSet, get as dbGet } from 'firebase/database';
 import { fmtOff, fmtS2, fmtS, fmtSigned } from './format.js';
@@ -636,18 +636,87 @@ function launchTeams() {
   if (roster.length < 3) return menuMsg('Teams needs at least 3 players.');
   isTeams = true;
   showGame(true);
-  draftState = createDraftState(roster, config.numTeams);
-  logTransition('tv', 'setup', 'draft-start', `${draftState.teams.length} teams`);
-  publishDraft(true);
-  renderDraft();
+  runCaptainWheels(roster);
+}
+
+/* ---- Stage 3a (TR-57): the wheels. One spin per captain slot with a
+   celebration beat, then a second wheel — captains only — for draft order.
+   Winners are pre-drawn; the wheel is theatre, the fairness is real. ---- */
+function spinWheel(title, names, winnerName, onDone) {
+  showScreen('reveal');
+  el('tv-match-banner').innerHTML = `<span class="tv-words">${title}</span>`;
+  el('reveal-head').textContent = '';
+  el('reveal-sub').textContent = '';
+  el('reveal-cards').innerHTML = '';
+  const big = el('reveal-winner');
+  big.classList.remove('clutch');
+  let i = Math.floor(Math.random() * names.length);
+  let delay = 70;
+  const tick = () => {
+    if (delay < 620) {
+      big.textContent = names[i % names.length];
+      i += 1;
+      beep(520, 28, 0.12);
+      delay *= 1.18;
+      setTimeout(tick, delay);
+    } else {
+      big.textContent = `🎉 ${winnerName}`;
+      chime();
+      setTimeout(onDone, 1500); // celebration beat
+    }
+  };
+  tick();
+}
+
+function runCaptainWheels(roster) {
+  const t = Math.max(2, Math.min(config.numTeams, roster.length));
+  const capIds = [...roster].sort(() => Math.random() - 0.5).slice(0, t).map((p) => p.playerId);
+  const order = [...capIds].sort(() => Math.random() - 0.5);
+  // Phones: look-at-screen narrator state while the wheels run.
+  dbSet(dbRef(db, `sessions/${lobbyId}/match`), { type: 'wheel', status: 'spinning' }).catch(() => {});
+  const rosterNames = roster.map((r) => r.name);
+  const capNames = order.map((id) => nameOf(id));
+  let slot = 0;
+  const nextCap = () => {
+    if (slot < capIds.length) {
+      slot += 1;
+      spinWheel(`CAPTAIN WHEEL — SLOT ${slot} OF ${capIds.length}`, rosterNames, nameOf(capIds[slot - 1]), nextCap);
+      return;
+    }
+    // Second wheel: draft order among the captains.
+    spinWheel('DRAFT ORDER — WHO PICKS FIRST?', capNames, capNames[0], () => {
+      draftState = createDraftState(roster, t, Math.random, order);
+      logTransition('tv', 'wheels', 'draft-start', `${draftState.teams.length} teams, order ${capNames.join(' > ')}`);
+      publishDraft(true);
+      renderDraft();
+    });
+  };
+  nextCap();
 }
 
 const nameOf = (pid) => (players.find((p) => p.playerId === pid) || {}).name || pid;
 
+let nameDeadline = null, nameTimer = null, nameTicker = null; // 2-minute customization cap (A6)
+
 function publishDraft(resetClock) {
   if (resetClock && draftState.status === 'drafting') { pickDeadline = Date.now() + 20000; startClock(); }
   if (draftState.status !== 'drafting') stopClock();
-  dbSet(dbRef(db, `sessions/${lobbyId}/match`), { ...draftState, deadline: draftState.status === 'drafting' ? pickDeadline : null }).catch(() => {});
+  // Entering the naming phase arms the 2-minute cap: on expiry, auto-fill
+  // "Team {Captain}" + a random unused logo and start the tournament.
+  if (draftState.status === 'naming' && !nameDeadline) {
+    nameDeadline = Date.now() + 120000;
+    nameTicker = setInterval(() => { if (draftState) renderDraft(); }, 1000);
+    nameTimer = setTimeout(() => {
+      if (!draftState || draftState.status !== 'naming') return;
+      autoFillCustomization(draftState, nameOf);
+      logTransition('tv', 'naming', 'auto-filled', '2-minute cap');
+      finalizeDraft();
+    }, 120000);
+  }
+  dbSet(dbRef(db, `sessions/${lobbyId}/match`), {
+    ...draftState,
+    deadline: draftState.status === 'drafting' ? pickDeadline : (nameDeadline || null),
+  }).catch(() => {});
 }
 function startClock() {
   stopClock();
@@ -660,13 +729,34 @@ function startClock() {
 function stopClock() { if (draftClock) { clearInterval(draftClock); draftClock = null; } }
 function finalizeDraft() {
   stopClock();
+  clearTimeout(nameTimer); clearInterval(nameTicker); nameDeadline = null;
   const teams = draftTeams(draftState, nameOf);
   draftState = null;
   tourney = createTournament(teams.map((t) => ({ id: t.id, name: `${t.emoji} ${t.name}`, members: t.members })));
   bracket = tourney.bracket;
   dbSet(dbRef(db, `sessions/${lobbyId}/match`), { type: 'tournament', status: 'playing' }).catch(() => {});
   logTransition('tv', 'draft', 'tournament-start', `${teams.length} teams`);
-  nextTourneyGame();
+  revealBracket(() => nextTourneyGame());
+}
+
+// Stage 3a bracket reveal (A7): the empty skeleton appears, then each team
+// slots into its seed one by one with a sting — every matchup its own moment.
+function revealBracket(done) {
+  const ids = bracket.entrants.map((e) => e.id);
+  const shown = new Set();
+  el('tv-match-banner').innerHTML = '<span class="tv-words">🏆 THE BRACKET</span>';
+  el('tv-game-msg').classList.remove('final');
+  el('tv-game-msg').textContent = '';
+  renderBracket(shown);
+  let i = 0;
+  const step = () => {
+    if (i >= ids.length) { setTimeout(done, 1700); return; }
+    shown.add(ids[i]); i += 1;
+    renderBracket(shown);
+    chime(); // the sting
+    setTimeout(step, 950);
+  };
+  setTimeout(step, 1100);
 }
 function renderDraft() {
   if (!draftState) return;
@@ -679,14 +769,16 @@ function renderDraft() {
     const li = document.createElement('li');
     li.className = 'standing alive';
     const turn = draftState.status === 'drafting' && i === draftState.turn ? '▶ ' : '';
-    li.textContent = `${turn}${t.emoji} ${t.name} — cap ${nameOf(t.captainId)}: ${t.members.map(nameOf).join(', ')}`;
+    const logoNote = draftState.status === 'naming' && !t.emoji && t.logoPickerId
+      ? ` · ${nameOf(t.logoPickerId)} picks the logo` : '';
+    li.textContent = `${turn}${t.emoji || '▢'} ${t.name} — cap ${nameOf(t.captainId)}: ${t.members.map(nameOf).join(', ')}${logoNote}`;
     st.appendChild(li);
   });
   if (draftState.pool.length) { const li = document.createElement('li'); li.className = 'standing out'; li.textContent = `Available: ${draftState.pool.map(nameOf).join(', ')}`; st.appendChild(li); }
   el('tv-game-msg').classList.remove('final');
   el('tv-game-msg').textContent = draftState.status === 'drafting'
     ? `${nameOf(draftState.teams[draftState.turn].captainId)} is picking… (auto-pick in ${Math.max(0, Math.ceil((pickDeadline - Date.now()) / 1000))}s)`
-    : 'Captains: set team name + emoji on your phone, then the host starts the tournament.';
+    : `Captains name the team · logo pickers choose the icon — auto-locks in ${nameDeadline ? Math.max(0, Math.ceil((nameDeadline - Date.now()) / 1000)) : 120}s (host can start sooner).`;
 }
 
 function startTeamMatch() {
@@ -831,7 +923,9 @@ function renderElim(m) {
 
 // TR-52 State 6: the tournament bracket tree (columns per round + a champion
 // column). Each slot shows the entrant and its GAME-win count in parentheses.
-function renderBracket() {
+function renderBracket(mask) {
+  // mask (Stage 3a reveal): a Set of entrant ids already revealed — everyone
+  // else renders as a mystery slot. Omitted = the normal full bracket.
   showScreen('bracket');
   const host = el('tv-bracket'); host.innerHTML = '';
   bracket.rounds.forEach((round, ri) => {
@@ -840,10 +934,12 @@ function renderBracket() {
     col.appendChild(h);
     round.forEach((mm) => {
       const box = document.createElement('div');
-      box.className = 'bkt-match' + (mm === curMatch && !mm.winner ? ' current' : '');
+      box.className = 'bkt-match' + (mm === curMatch && !mm.winner && !mask ? ' current' : '');
       const slot = (ent, games, isWinner) => {
         const s = document.createElement('div'); s.className = 'bkt-slot' + (isWinner ? ' winner' : '');
-        const name = ent ? ent.name : (mm.bye ? '(bye)' : 'TBD');
+        const name = ent
+          ? (mask && !mask.has(ent.id) ? '❓' : ent.name)
+          : (mm.bye ? '(bye)' : 'TBD');
         s.innerHTML = `<span class="who">${name}</span><span class="games">(${games})</span>`;
         return s;
       };
@@ -894,7 +990,7 @@ async function boot() {
     if (draftState) {
       if (ev.type === 'draft-pick' && ev.pick) { if (applyPick(draftState, ev.playerId, ev.pick).ok) { publishDraft(true); renderDraft(); } return; }
       if (ev.type === 'team-name' && typeof ev.name === 'string') { const t = draftState.teams.find((x) => x.captainId === ev.playerId); if (t && ev.name.trim()) { t.name = ev.name.trim().slice(0, 16); publishDraft(false); renderDraft(); } return; }
-      if (ev.type === 'team-emoji' && ev.emoji) { const t = draftState.teams.find((x) => x.captainId === ev.playerId); if (t) { t.emoji = ev.emoji; publishDraft(false); renderDraft(); } return; }
+      if (ev.type === 'team-emoji' && ev.emoji) { if (applyLogo(draftState, ev.playerId, ev.emoji).ok) { publishDraft(false); renderDraft(); } return; }
       if (ev.type === 'draft-done' && ev.playerId === hostId && draftState.status === 'naming') { finalizeDraft(); return; }
     }
     if (ev.type === 'cfg' && !inGame && ev.playerId === hostId && ev.config) { applyCfg(ev.config); return; }

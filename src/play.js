@@ -163,15 +163,31 @@ function renderDraftUI() {
   const pool = el('draft-pool'); pool.innerHTML = '';
   el('draft-pool-label').hidden = !isMyPick;
   if (isMyPick) (d.pool || []).forEach((pid) => { const btn = document.createElement('button'); btn.className = 'join-btn'; btn.textContent = `Draft ${nameOfLocal(pid)}`; btn.addEventListener('click', () => sendEvent(db, code, me.playerId, 'draft-pick', { pick: pid })); pool.appendChild(btn); });
+  // Split-role customization (Stage 3a, spec A6): the CAPTAIN types the name;
+  // ONE random non-captain is the logo picker; everyone else spectates live.
   const naming = d.status === 'naming' && iAmCaptain;
+  const myLogoTeam = d.status === 'naming'
+    ? (d.teams || []).find((t) => t.logoPickerId === me?.playerId) : null;
   el('draft-name-form').hidden = !naming;
-  el('draft-emoji').hidden = !naming;
+  el('draft-emoji').hidden = !myLogoTeam;
+  if (myLogoTeam) {
+    const taken = new Set((d.teams || []).map((t) => t.emoji).filter(Boolean));
+    document.querySelectorAll('#draft-emoji .emoji-btn').forEach((b) => {
+      const isTaken = taken.has(b.textContent) && myLogoTeam.emoji !== b.textContent;
+      b.disabled = isTaken;
+      b.style.opacity = isTaken ? '.3' : '1';
+      b.style.outline = myLogoTeam.emoji === b.textContent ? '2px solid #22c55e' : 'none';
+    });
+  }
   const host = hostPlayer(); const iAmHost = host && me && host.playerId === me.playerId;
   el('draft-start-btn').hidden = !(iAmHost && d.status === 'naming');
   const secs = d.deadline ? Math.max(0, Math.ceil((d.deadline - Date.now()) / 1000)) : 0;
   el('turn-banner').textContent = d.status === 'drafting'
     ? (isMyPick ? `📋 Your pick! (${secs}s) Tap a player below.` : `📋 Draft in progress — ${nameOfLocal(d.teams?.[d.turn]?.captainId)} picking… (${secs}s)`)
-    : (naming ? '🏷️ Name your team + pick an emoji.' : (iAmHost ? 'Captains are naming — tap Start Tournament when ready.' : 'Waiting for captains to name their teams…'));
+    : (naming && myLogoTeam ? `🏷️ Name your team AND pick its logo. (${secs}s)`
+      : naming ? `🏷️ Name your team — your logo picker chooses the icon. (${secs}s)`
+      : myLogoTeam ? `🎨 YOU pick the team logo — tap an icon. (${secs}s)`
+      : (iAmHost ? `Teams are customizing (${secs}s) — Start Tournament skips the wait.` : `👀 Watch the TV — teams are customizing. (${secs}s)`));
 }
 
 el('join-form').addEventListener('submit', async (e) => {
@@ -260,6 +276,16 @@ function renderGuessPhone() {
 }
 
 function renderPhase() {
+  // Stage 3a wheels: pure look-at-screen narrator state (phone never dark).
+  if (matchState && matchState.type === 'wheel') {
+    if (el('draft-panel')) el('draft-panel').hidden = true;
+    if (el('big-press')) el('big-press').hidden = true;
+    renderHostConfig(false);
+    if (el('next-round-btn')) el('next-round-btn').hidden = true;
+    const b = el('turn-banner');
+    if (b) b.textContent = '🎡 Eyes on the TV — captains are being chosen!';
+    return;
+  }
   if (matchState && matchState.type === 'draft') { renderDraftUI(); return; }
   if (el('draft-panel')) el('draft-panel').hidden = true;
   const host = hostPlayer();
