@@ -175,7 +175,7 @@ function renderHard(g, teamCtx) {
     // wins instantly. Show both live clocks and both attempt histories.
     const ids = [g.repA.playerId, g.repB.playerId];
     el('hard-head').textContent = '🏁 RACE TO THE ZONE';
-    el('hard-sub').textContent = `First to land in the zone wins — ${ids.map((id) => `${g.players[id]?.name || ''} ${((g.attempts[id] || []).length)}/13`).join('  ·  ')}`;
+    el('hard-sub').textContent = ids.map((id) => `${g.players[id]?.name || ''} ${((g.attempts[id] || []).length)}/13`).join('  ·  ');
     el('hard-target').innerHTML = ledHtml(target1);
     el('hard-zone').textContent = `HIT THE ZONE ${fmtS2(zoneLo)}s – ${fmtS2(zoneHi)}s`;
     const hist = el('hard-history'); hist.innerHTML = '';
@@ -457,12 +457,87 @@ const KIND_LABEL = {
   guess: ['GUESS THE CLOCK', 'No clocks. Feel the time, closest guess wins'],
 };
 
+/* ---- First-play tutorials: the first time a game mode comes up in THIS
+   lobby, an in-depth how-to-win walkthrough takes the stage before the
+   matchup. The HOST paces it — every step advances on Next. Seen modes
+   persist per lobby (sessions/room/tutorials), so rematches and TV reloads
+   never replay one. ---- */
+let tutorialsSeen = {};
+let tutorialActive = null; // { kind, step, onDone }
+
+const TUTORIALS = {
+  classic: ['CLASSIC', [
+    ['THE TARGET', 'The board shows ONE amber target time — say 12.3 seconds. Your phone shows the same target, so you never need to turn around.'],
+    ['TIME IT BLIND', 'Tap once to START your clock. Count the seconds in your head — your phone shows NO running clock. Tap again to STOP right on the target.'],
+    ['HOW YOU WIN', 'Closest to the target takes the round. Within 0.05s is a CLUTCH win. Sit on your clock past 30 seconds and it\'s a DNF — the round goes to your opponent. First to 4 rounds takes the game.'],
+  ]],
+  hard: ['HARD CLASSIC', [
+    ['THE ZONE', 'One target, one tiny window. You must land INSIDE the tenth: on target 5.4, anything from 5.40 to 5.49 counts — 5.50 misses.'],
+    ['THE RACE', 'Both players attempt at the SAME time, up to 13 tries each. The FIRST clean hit inside the zone wins the round instantly.'],
+    ['WASHOUTS', 'Burn all 13 attempts and you wash out. Both wash out? Closest single attempt takes it. Idle for 30 seconds and the round goes to your opponent.'],
+  ]],
+  guess: ['GUESS THE CLOCK', [
+    ['EYES UP, CLOCKS OFF', 'A GREEN flash and a long beep mean a hidden timer just started. The screen goes dark and NOTHING moves — no clock anywhere.'],
+    ['FEEL THE TIME', 'Count in your head. A RED flash and a lower beep mean the timer stopped. Nobody knows how long it ran — that IS the game.'],
+    ['LOCK IT IN', 'Type how long you think it ran on your phone keypad, down to hundredths — 8.87 beats "about 9". Closest guess takes the round.'],
+  ]],
+};
+
+function runTutorial(kind, onDone) {
+  const t = TUTORIALS[kind];
+  if (!t || tutorialsSeen[kind]) { onDone(); return; }
+  tutorialsSeen[kind] = true;
+  dbSet(dbRef(db, `sessions/${lobbyId}/tutorials`), tutorialsSeen).catch(() => {});
+  tutorialActive = { kind, step: 0, onDone };
+  // Phones: narrator state; the host phone gets the Next button.
+  dbSet(dbRef(db, `sessions/${lobbyId}/game`), { mode: 'tutorial', status: 'tutorial', kind, updatedAt: Date.now() }).catch(() => {});
+  sting();
+  renderTutorial();
+}
+
+function renderTutorial() {
+  if (!tutorialActive) return;
+  const [title, steps] = TUTORIALS[tutorialActive.kind];
+  const [head, body] = steps[tutorialActive.step];
+  showScreen('reveal');
+  el('tv-ledger').hidden = true;
+  el('tv-match-banner').innerHTML = `<span class="tv-words">📖 ${title} — HOW TO WIN</span>`;
+  el('reveal-head').innerHTML = `<span class="tv-words">${head}</span>`;
+  el('reveal-sub').textContent = '';
+  const wrap = el('reveal-cards'); wrap.innerHTML = '';
+  const c = document.createElement('div');
+  c.className = 'reveal-card tutorial-card';
+  c.innerHTML = `<div class="tut-body">${body}</div>`;
+  wrap.appendChild(c);
+  el('reveal-winner').textContent = `${tutorialActive.step + 1} of ${steps.length}`;
+  el('tv-game-msg').classList.remove('final');
+  el('tv-game-msg').textContent = 'Host — tap Next ▶';
+}
+
+function advanceTutorial() {
+  if (!tutorialActive) return;
+  tutorialActive.step += 1;
+  const steps = TUTORIALS[tutorialActive.kind][1];
+  if (tutorialActive.step >= steps.length) {
+    const done = tutorialActive.onDone;
+    tutorialActive = null;
+    done();
+    return;
+  }
+  sting();
+  renderTutorial();
+}
+
 function beginRound() {
   if (!engine) return;
   const reps = engine.peekReps ? engine.peekReps() : null;
   if (!reps) { engine.nextRound(); return; } // PvE all-play: no matchup beat
   const pool = Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
   nextKind = resolveMode(pool);
+  runTutorial(nextKind, () => presentMatchup(reps));
+}
+
+function presentMatchup(reps) {
   presenting = { reps, ready: new Set(), t0: Date.now(), fired: false };
   // Publish the presentation as the game state so the two phones show READY
   // and everyone else's phone narrates (stateless-phone principle).
@@ -574,7 +649,8 @@ function launchPve() {
     ? createKoth({ db, room: lobbyId, players: roster, n: config.kothN, hard, onTv: { state: renderRound }, onMatch: renderKoth })
     : createElim({ db, room: lobbyId, players: roster, onTv: { state: renderRound }, onMatch: renderElim });
   logTransition('tv', 'setup', 'pve-launch', `${config.pveMode} players=${roster.length}`);
-  beginRound();
+  // PvE rounds are classic mechanics (the hard flag only tightens targets).
+  runTutorial('classic', () => beginRound());
 }
 
 /* ---- PvP single-elim tournament: every player for themselves. Inherits the
@@ -971,7 +1047,7 @@ function renderTeamRound(g, ctx) {
     }).join('');
     startClockLoop();
     el('tv-game-msg').classList.remove('final');
-    el('tv-game-msg').textContent = 'Active players are timing blind — the room can see the clocks!';
+    el('tv-game-msg').textContent = ''; // how-to hints live in the first-play tutorial now
   } else if (g.status === 'over') {
     stopClockLoop();
     el('tv-clocks').hidden = true;
@@ -1014,7 +1090,7 @@ function renderRound(g) {
     }).join('');
     startClockLoop();
     el('tv-game-msg').classList.remove('final');
-    el('tv-game-msg').textContent = 'Timing blind on the phones — the room sees the clocks!';
+    el('tv-game-msg').textContent = ''; // how-to hints live in the first-play tutorial now
   } else if (g.status === 'running') {
     showScreen('active');
     el('tv-target-label').hidden = false;
@@ -1022,7 +1098,7 @@ function renderRound(g) {
     el('tv-turn').hidden = true;
     fillRows(g);
     el('tv-game-msg').classList.remove('final');
-    el('tv-game-msg').textContent = 'Tap to start your timer, tap again to stop — land on the target!';
+    el('tv-game-msg').textContent = '';
   } else if (g.status === 'over' && duel) {
     // PvP head-to-head reveal.
     const contenders = ids.map((id) => ({ ...g.players[id], playerId: id, team: '', targetMs: g.targetMs }));
@@ -1247,6 +1323,8 @@ async function boot() {
     }
     if (ev.type === 'cfg' && !inGame && ev.playerId === hostId && ev.config) { applyCfg(ev.config); return; }
     if (ev.type === 'startgame' && !inGame && ev.playerId === hostId) { startGame(); return; }
+    // First-play tutorial paging — must outrank every other Next handler.
+    if (ev.type === 'next' && tutorialActive && ev.playerId === hostId) { advanceTutorial(); return; }
     if (ev.type === 'ready') { onReady(ev); return; }
     if (ev.type === 'next' && awaitingEndNight === 'champion' && ev.playerId === hostId) { showEndNightChoice(); return; }
     if (ev.type === 'endnight-choice' && awaitingEndNight === 'choice' && ev.playerId === hostId && ev.choice) { onEndNightChoice(ev.choice); return; }
@@ -1265,6 +1343,11 @@ async function boot() {
     const st = (await dbGet(dbRef(db, `sessions/${lobbyId}/stats`))).val();
     if (st && st.players) night = st;
   } catch { /* fresh night */ }
+  // Tutorials already shown in this lobby never replay (survives TV reloads).
+  try {
+    const tut = (await dbGet(dbRef(db, `sessions/${lobbyId}/tutorials`))).val();
+    if (tut) tutorialsSeen = tut;
+  } catch { /* fresh lobby */ }
   try {
     const m = (await dbGet(dbRef(db, `sessions/${lobbyId}/match`))).val();
     if (m && m.snapshot && m.snapshot.entrants && m.status !== 'complete') {

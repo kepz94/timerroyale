@@ -282,6 +282,14 @@
             `<div class="reveal-card"><div class="rc-team">SHARKNADOOOOOOOS</div><div class="rc-name">${LONGP[1]}</div><div class="rc-time">12.00s</div><div class="rc-dev">DEVIATION +3.13s</div></div>`;
           el('guess-winner').textContent = '🏆 THUNDERDOMES wins the round! (+1)';
         },
+        tutorial() {
+          showGame(); show('tv-reveal');
+          el('tv-match-banner').innerHTML = '<span class="tv-words">📖 HARD CLASSIC — HOW TO WIN</span>';
+          el('reveal-head').innerHTML = '<span class="tv-words">WASHOUTS</span>';
+          el('reveal-cards').innerHTML = '<div class="reveal-card tutorial-card"><div class="tut-body">Burn all 13 attempts and you wash out. Both wash out? Closest single attempt takes it. Idle for 30 seconds and the round goes to your opponent.</div></div>';
+          el('reveal-winner').textContent = '3 of 3';
+          el('tv-game-msg').textContent = 'Host — tap Next ▶';
+        },
         awards() {
           showGame(); show('tv-reveal');
           el('tv-match-banner').innerHTML = '<span class="tv-words">🏅 TONIGHT\'S AWARDS</span>';

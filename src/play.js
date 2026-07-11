@@ -324,6 +324,20 @@ function renderPhase() {
     if (el('guess-panel')) el('guess-panel').hidden = true;
     return;
   }
+  // First-play tutorial: narrator state; the HOST phone paces it with Next.
+  if (gameState?.mode === 'tutorial') {
+    const hostT = hostPlayer();
+    const hostMe2 = hostT && me && hostT.playerId === me.playerId;
+    if (el('draft-panel')) el('draft-panel').hidden = true;
+    if (el('big-press')) el('big-press').hidden = true;
+    renderHostConfig(false);
+    if (el('result-panel')) el('result-panel').hidden = true;
+    if (el('guess-panel')) el('guess-panel').hidden = true;
+    if (el('next-round-btn')) el('next-round-btn').hidden = !hostMe2;
+    const bT = el('turn-banner');
+    if (bT) bT.textContent = hostMe2 ? '📖 Tutorial on the TV — tap Next ▶ to page through.' : '📖 New mode! Eyes on the TV.';
+    return;
+  }
   // Stage 3a wheels: pure look-at-screen narrator state (phone never dark).
   if (matchState && matchState.type === 'wheel') {
     if (el('draft-panel')) el('draft-panel').hidden = true;

@@ -228,6 +228,12 @@
       @keyframes slamIn { from { transform: scale(1.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
       @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
+      /* First-play tutorial: one wide amber-framed card per step, host-paced */
+      .reveal-card.tutorial-card { flex: 0 1 min(64rem, 86vw); max-width: 86vw;
+        border-color: var(--target); box-shadow: 0 0 34px rgb(240 180 41 / .25); }
+      .tutorial-card .tut-body { font-size: clamp(1.3rem, 2.4vw, 2.6rem);
+        line-height: 1.5; font-weight: 600; white-space: normal; }
+
       /* Lobby is a stage, never fully still: neon pulse on the room code,
          joining players pop in */
       .lobby .room-code { animation: neonPulse 2.8s ease-in-out infinite alternate; }
