@@ -122,7 +122,7 @@ function showScreen(s) {
 
 // TR-60 context beat: a full-screen title card + sting BEFORE every spectacle
 // (the room must always know what's about to happen). Resolves after `ms`.
-function titleCard({ kicker = '', title, hint = '', tone = 'green', ms = 2600 }) {
+function titleCard({ kicker = '', title, hint = '', tone = 'green', ms = 2600, sound = 'sting' }) {
   return new Promise((resolve) => {
     const t = el('tv-title');
     t.className = `tv-title tone-${tone}`;
@@ -130,7 +130,7 @@ function titleCard({ kicker = '', title, hint = '', tone = 'green', ms = 2600 })
     el('tt-title').textContent = title;
     el('tt-hint').textContent = hint;
     t.hidden = false;
-    sting();
+    if (sound === 'fall') slideWhistle(); else if (sound === 'sting') sting();
     setTimeout(() => t.classList.add('leaving'), Math.max(400, ms - 400));
     setTimeout(() => { t.hidden = true; t.classList.remove('leaving'); resolve(); }, ms);
   });
@@ -481,6 +481,11 @@ const TUTORIALS = {
     ['FEEL THE TIME', 'Count in your head. A RED flash and a lower beep mean the timer stopped. Nobody knows how long it ran — that IS the game.'],
     ['LOCK IT IN', 'Type how long you think it ran on your phone keypad, down to hundredths — 8.87 beats "about 9". Closest guess takes the round.'],
   ]],
+  lms: ['LAST ONE STANDING', [
+    ['EVERYONE PLAYS', 'Every round, ALL survivors time the same amber target at once. Tap to START your clock, count in your head — no clock on your phone — tap to STOP on the target.'],
+    ['WORST IS OUT', 'When everyone locks in, the times are revealed. The FURTHEST from the target is eliminated. Idle past 30 seconds and it\'s a DNF — every DNF that round goes home.'],
+    ['SURVIVE', 'The circle shrinks every round. Outlast everyone — the last one standing takes the night.'],
+  ]],
 };
 
 function runTutorial(kind, onDone) {
@@ -642,13 +647,91 @@ function showGame(on) {
 /* ---- PvE ---- */
 function launchPve() {
   if (config.pveMode === 'koth') return launchHill();
+  return launchLms();
+}
+
+/* ---- Last One Standing: all survivors time every round at once; the worst
+   misses go home — and elimination is CEREMONY, not a silent list edit. ---- */
+function launchLms() {
   const roster = activePlayers();
+  if (roster.length < 2) return setupMsg('Last One Standing needs at least 2 players.');
+  isTeams = false; tourney = null; bracket = null; hill = null;
   showGame(true);
-  el('tv-match-banner').textContent = 'Last Man Standing';
-  engine = createElim({ db, room: lobbyId, players: roster, onTv: { state: renderRound }, onMatch: renderElim });
-  logTransition('tv', 'setup', 'pve-launch', `lms players=${roster.length}`);
-  // LMS rounds are classic mechanics.
-  runTutorial('classic', () => beginRound());
+  engine = createElim({ db, room: lobbyId, players: roster, onTv: { state: renderRound }, onMatch: onElimUpdate });
+  logTransition('tv', 'setup', 'lms-launch', `${roster.length} players`);
+  (async () => {
+    await titleCard({ kicker: 'Tonight', title: 'LAST ONE STANDING', hint: 'Worst miss goes home — survive to the end', tone: 'danger' });
+    runTutorial('lms', () => beginRound());
+  })();
+}
+
+// Round settled: let the reveal breathe, produce the send-off, then the board.
+function onElimUpdate(m, out) {
+  if (m.status === 'round') { el('tv-match-banner').innerHTML = `<span class="tv-words">💀 LAST ONE STANDING — ROUND ${m.roundNum}</span>`; return; }
+  if (m.status === 'champion') {
+    engine = null;
+    setTimeout(async () => {
+      if (out && out.length) await elimCeremony(out, m);
+      crownSurvivor(m.champion, m);
+    }, 2600);
+    return;
+  }
+  setTimeout(async () => {
+    if (!engine) return; // a newer state took the stage
+    if (out && out.length) await elimCeremony(out, m);
+    // If the host fired the next round during the ceremony, it owns the screen.
+    if (engine && engine.getState().status === 'round') return;
+    renderElimBoard(m);
+  }, 2600);
+}
+
+function elimCeremony(out, m) {
+  const dnf = out[0].state === 'dnf';
+  return titleCard({
+    kicker: `Round ${m.roundNum}`,
+    title: out.length > 1 ? `💀 ${out.length} ELIMINATED` : `💀 ${out[0].name} IS OUT`,
+    hint: out.length > 1 ? out.map((s) => s.name).join(' · ') : (dnf ? 'The clock won — DNF' : 'Worst miss of the round'),
+    tone: 'danger', ms: 3400, sound: 'fall',
+  });
+}
+
+// The circle, between rounds: survivors as pills, the fallen struck through.
+function renderElimBoard(m) {
+  stopClockLoop();
+  ['tv-active', 'tv-reveal', 'tv-hard', 'tv-guess', 'tv-wheel', 'tv-draft', 'tv-bracket'].forEach((id) => { el(id).hidden = true; });
+  el('tv-ledger').hidden = true; el('tv-turn').hidden = true;
+  el('tv-standings').hidden = false;
+  const aliveList = Object.entries(m.alive || {});
+  el('tv-match-banner').innerHTML = `<span class="tv-words">💀 LAST ONE STANDING — ${aliveList.length} LEFT</span>`;
+  const st = el('tv-standings'); st.innerHTML = '';
+  const row = (txt, cls) => { const li = document.createElement('li'); li.className = `standing ${cls}`; li.textContent = txt; st.appendChild(li); };
+  aliveList.forEach(([, name]) => row(name, 'alive'));
+  [...(m.eliminated || [])].reverse().forEach((e) => row(`${e.name} — out R${e.round}`, 'out'));
+  el('tv-game-msg').classList.remove('final');
+  el('tv-game-msg').textContent = `Host — tap Next for round ${m.roundNum + 1}.`;
+}
+
+// One survivor left: the night has a winner — produce it, then the rematch menu.
+async function crownSurvivor(c, m) {
+  stopClockLoop();
+  await titleCard({ kicker: 'The circle closed', title: 'LAST ONE STANDING', hint: `${m.roundNum} rounds survived`, tone: 'gold' });
+  showScreen('reveal');
+  el('tv-ledger').hidden = true;
+  el('tv-match-banner').innerHTML = '<span class="tv-words">💀 LAST ONE STANDING 💀</span>';
+  el('reveal-head').innerHTML = '<span style="font-size:2.2em;line-height:1">🏆</span>';
+  el('reveal-sub').innerHTML = `<span class="tv-words" style="font-size:1.6em;color:var(--win)">${c.name}</span>`;
+  const wrap = el('reveal-cards'); wrap.innerHTML = '';
+  const card = document.createElement('div');
+  card.className = 'reveal-card win';
+  card.innerHTML = `<div class="rc-ava">${(c.name[0] || '?').toUpperCase()}</div><div class="rc-name">${c.name}</div><div class="rc-dev">${tonightLine(night, c.playerId) || ''}</div>`;
+  wrap.appendChild(card);
+  el('reveal-winner').textContent = `Outlasted ${(m.eliminated || []).length} players — the night is theirs`;
+  el('tv-game-msg').classList.add('final');
+  el('tv-game-msg').textContent = 'Host — tap Next for the rematch menu.';
+  confettiBurst();
+  drumroll();
+  awaitingEndNight = 'champion';
+  dbSet(dbRef(db, `sessions/${lobbyId}/game`), { mode: 'awards', status: 'champion', updatedAt: Date.now() }).catch(() => {});
 }
 
 /* ---- King of the Hill (kepu spec Jul 11): two random players open the
@@ -1221,16 +1304,6 @@ function renderRound(g) {
   }
 }
 
-function renderElim(m) {
-  el('tv-bracket').hidden = true; el('tv-standings').hidden = false;
-  el('tv-match-banner').textContent = m.status === 'champion' ? '👑 CHAMPION 👑' : `Last Man Standing — round ${m.roundNum}`;
-  const st = el('tv-standings');
-  st.innerHTML = '';
-  for (const [id, name] of Object.entries(m.alive || {})) { const li = document.createElement('li'); li.className = 'standing alive'; li.textContent = name; st.appendChild(li); }
-  for (const e of [...(m.eliminated || [])].reverse()) { const li = document.createElement('li'); li.className = 'standing out'; li.textContent = `${e.name} — out R${e.round}`; st.appendChild(li); }
-  if (m.status === 'champion') { el('tv-game-msg').classList.add('final'); el('tv-game-msg').textContent = `👑 ${m.champion.name} is the last one standing!`; }
-}
-
 // TR-52 State 6: the tournament bracket tree (columns per round + a champion
 // column). Each slot shows the entrant and its GAME-win count in parentheses.
 function renderBracket(mask, justRevealedId) {
@@ -1444,7 +1517,21 @@ async function boot() {
   } catch { /* fresh lobby */ }
   try {
     const m = (await dbGet(dbRef(db, `sessions/${lobbyId}/match`))).val();
-    if (m && m.type === 'hill' && m.status !== 'king' && Array.isArray(m.active)) {
+    if (m && m.type === 'elim' && m.status !== 'champion' && m.alive && Object.keys(m.alive).length > 1) {
+      // Resume Last One Standing: survivors + the fallen restore; the
+      // interrupted round restarts on the host's Next.
+      const alive = Object.entries(m.alive).map(([playerId, name]) => ({ playerId, name }));
+      isTeams = false; hill = null;
+      showGame(true);
+      engine = createElim({
+        db, room: lobbyId, players: alive, onTv: { state: renderRound }, onMatch: onElimUpdate,
+        initialEliminated: m.eliminated || [],
+        // A round interrupted mid-flight reruns under the SAME number.
+        initialRoundNum: m.status === 'round' ? Math.max(0, (m.roundNum || 1) - 1) : (m.roundNum || 0),
+      });
+      logTransition('tv', 'boot', 'resumed', 'lms restored');
+      renderElimBoard({ ...m, roundNum: m.roundNum || 0 });
+    } else if (m && m.type === 'hill' && m.status !== 'king' && Array.isArray(m.active)) {
       // Resume King of the Hill: the line + win meters survive a TV reload;
       // the interrupted duel restarts fresh (matches the resume pattern).
       hill = { active: m.active, queue: m.queue || [], wins: m.wins || {}, target: m.target || HILL_WINS };

@@ -398,7 +398,12 @@ function renderPhase() {
       const hillQ = matchState?.type === 'hill' ? (matchState.queue || []) : null;
       const hillPos = hillQ ? hillQ.findIndex((p) => p.playerId === me.playerId) + 1 : 0;
       const onDeck = matchState?.type === 'hill' && (matchState.active || []).some((p) => p.playerId === me.playerId);
-      if (phase === 'active') banner.textContent = inThisRound ? '⏱ Tap to start, tap to stop — time it blind!'
+      // Last One Standing: the fallen become spectators with a verdict.
+      const elimMe = matchState?.type === 'elim' ? (matchState.eliminated || []).find((e) => e.playerId === me.playerId) : null;
+      if (elimMe) banner.textContent = iAmHost
+        ? `💀 You're out (round ${elimMe.round}) — but you still run the show. Tap Next!`
+        : `💀 You're out — eliminated round ${elimMe.round}. Cheer from the couch!`;
+      else if (phase === 'active') banner.textContent = inThisRound ? '⏱ Tap to start, tap to stop — time it blind!'
         : hillPos ? `🧗 You're #${hillPos} in line — winner stays on!`
         : '👀 Watching — you\'re up soon!';
       else banner.textContent = iAmHost ? 'Round over — tap Next when ready.'

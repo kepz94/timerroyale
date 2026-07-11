@@ -282,6 +282,16 @@
             `<div class="reveal-card"><div class="rc-team">SHARKNADOOOOOOOS</div><div class="rc-name">${LONGP[1]}</div><div class="rc-time">12.00s</div><div class="rc-dev">DEVIATION +3.13s</div></div>`;
           el('guess-winner').textContent = '🏆 THUNDERDOMES wins the round! (+1)';
         },
+        lms() {
+          showGame();
+          el('tv-standings').hidden = false;
+          el('tv-match-banner').innerHTML = '<span class="tv-words">💀 LAST ONE STANDING — 9 LEFT</span>';
+          const st = el('tv-standings');
+          const row = (txt, cls) => { const li = document.createElement('li'); li.className = 'standing ' + cls; li.textContent = txt; st.appendChild(li); };
+          LONGP.slice(0, 9).forEach((p) => row(p, 'alive'));
+          LONGP.slice(9).forEach((p, i) => row(`${p} — out R${7 - i}`, 'out'));
+          el('tv-game-msg').textContent = 'Host — tap Next for round 8.';
+        },
         hill() {
           showGame();
           el('tv-standings').hidden = false;

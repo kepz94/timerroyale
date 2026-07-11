@@ -7,10 +7,10 @@ import { ref, set, serverTimestamp } from 'firebase/database';
 import { createRound, randomTarget } from './round.js';
 import { logTransition } from './session.js';
 
-export function createMatch({ db, room, players, onTv, onMatch }) {
+export function createMatch({ db, room, players, onTv, onMatch, initialEliminated = [], initialRoundNum = 0 }) {
   let alive = players.map(({ playerId, name }) => ({ playerId, name }));
-  const eliminated = []; // [{playerId, name, round, reason}]
-  let roundNum = 0;
+  const eliminated = [...initialEliminated]; // [{playerId, name, round, reason}] — seeded on resume
+  let roundNum = initialRoundNum;
   let status = 'between'; // between | round | champion
   let currentRound = null;
 
