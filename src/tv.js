@@ -469,7 +469,7 @@ const TUTORIALS = {
   classic: ['CLASSIC', [
     ['THE TARGET', 'The board shows ONE amber target time — say 12.3 seconds. Your phone shows the same target, so you never need to turn around.'],
     ['TIME IT BLIND', 'Tap once to START your clock. Count the seconds in your head — your phone shows NO running clock. Tap again to STOP right on the target.'],
-    ['HOW YOU WIN', 'Closest to the target takes the round. Within 0.05s is a CLUTCH win. Sit on your clock past 30 seconds and it\'s a DNF — the round goes to your opponent. First to 4 rounds takes the game.'],
+    ['HOW YOU WIN', 'Closest to the target takes the round. Sit on your clock past 30 seconds and it\'s a DNF — the round goes to your opponent.'],
   ]],
   hard: ['HARD CLASSIC', [
     ['THE ZONE', 'One target, one tiny window. You must land INSIDE the tenth: on target 5.4, anything from 5.40 to 5.49 counts — 5.50 misses.'],
