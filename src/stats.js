@@ -63,7 +63,7 @@ export function roundEntries(g) {
         early: Number.isFinite(p.guessMs) && Number.isFinite(g.actualMs) && p.guessMs < g.actualMs,
         late: Number.isFinite(p.guessMs) && Number.isFinite(g.actualMs) && p.guessMs > g.actualMs,
       });
-    } else if (g.mode === 'hard') {
+    } else if (g.mode === 'hard' || g.mode === 'hardrace') {
       const att = (g.attempts && g.attempts[p.playerId]) || [];
       const best = att.length ? Math.min(...att.map((a) => Math.abs(a.elapsedMs - g.targetMs))) : null;
       entries.push({
@@ -85,9 +85,10 @@ export function roundEntries(g) {
     }
   });
   // Dead-heat guard: a round whose two closest deviations are identical is a
-  // void (the engines rerun it) — recording it would fake a win/loss.
+  // void (the engines rerun it) — recording it would fake a win/loss. The
+  // race-to-safety is exempt: it settles by hit ORDER, ties never void it.
   const devs = entries.map((e) => e.deviationMs).filter(Number.isFinite).sort((a, b) => a - b);
-  if (devs.length >= 2 && devs[0] === devs[1]) return null;
+  if (g.mode !== 'hardrace' && devs.length >= 2 && devs[0] === devs[1]) return null;
   return { winnerId, entries };
 }
 

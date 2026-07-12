@@ -233,12 +233,24 @@ function renderResult() {
     if (g.mode === 'target' && mine.state === 'stopped') {
       panel.innerHTML = '<div class="res-title">🔒 Locked in</div><div class="res-sub">Waiting for the reveal on the TV…</div>';
       panel.hidden = false;
+    } else if (g.mode === 'hardrace' && mine.state === 'stopped') {
+      panel.innerHTML = '<div class="res-title">🎯 SAFE</div><div class="res-sub">Spot locked — watch the race on the TV…</div>';
+      panel.hidden = false;
     } else panel.hidden = true;
     return;
   }
   const iWon = g.winner && g.winner.playerId === me.playerId;
   let myDev = null;
   const lines = [];
+  if (g.mode === 'hardrace') {
+    // Race to safety: your verdict is binary — SAFE or out.
+    const safeIdx = (g.safe || []).indexOf(me.playerId);
+    panel.innerHTML = safeIdx >= 0
+      ? `<div class="res-title">🎯 SAFE #${safeIdx + 1}</div><div class="res-sub">You hit the zone${mine.elapsedMs != null ? ` at ${fmt2(mine.elapsedMs)}s` : ''}</div>`
+      : `<div class="res-title">💀 ${mine.state === 'dnf' ? 'IDLE — OUT' : 'LAST ONE IN'}</div><div class="res-sub">Target ${fmt2(g.targetMs)}s — the zone closed on you</div>`;
+    panel.hidden = false;
+    return;
+  }
   if (g.mode === 'guess') {
     myDev = Number.isFinite(mine.deltaMs) ? mine.deltaMs : null;
     lines.push(`Actual ${fmt2(g.actualMs)}s · your guess ${mine.guessMs != null ? fmt2(mine.guessMs) : '0.00'}s`);

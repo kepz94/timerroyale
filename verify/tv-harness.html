@@ -282,6 +282,22 @@
             `<div class="reveal-card"><div class="rc-team">SHARKNADOOOOOOOS</div><div class="rc-name">${LONGP[1]}</div><div class="rc-time">12.00s</div><div class="rc-dev">DEVIATION +3.13s</div></div>`;
           el('guess-winner').textContent = '🏆 THUNDERDOMES wins the round! (+1)';
         },
+        hardrace() {
+          // 16-player race to safety, mid-round (rows, 2 columns)
+          showGame(); show('tv-hard');
+          el('tv-match-banner').innerHTML = '<span class="tv-words">💀 LAST ONE STANDING — ROUND 2</span>';
+          el('hard-head').textContent = '🏁 RACE TO SAFETY';
+          el('hard-sub').textContent = '9 of 15 spots locked — LAST ONE IN IS OUT';
+          el('hard-target').innerHTML = ledHtml('2.5');
+          el('hard-zone').textContent = 'HIT THE ZONE 2.50s – 2.59s';
+          const hist = el('hard-history');
+          hist.classList.add('rows-2col');
+          hist.innerHTML = LONGP.map((p, i) => {
+            if (i < 9) return `<li class="round-row hit"><span class="row-name">🎯 ${p}</span><span class="row-time">SAFE #${i + 1} · 2.5${i}s</span></li>`;
+            if (i === 15) return `<li class="round-row dnf"><span class="row-name">💀 ${p}</span><span class="row-time">IDLE — OUT</span></li>`;
+            return `<li class="round-row waiting"><span class="row-name">⏱ ${p}</span><span class="row-time">${i} tries</span></li>`;
+          }).join('');
+        },
         lmsrows() {
           // 16-player classic all-play, round over (ranked rows, 2 columns)
           showGame(); show('tv-active');

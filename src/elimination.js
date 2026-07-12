@@ -8,10 +8,9 @@
 import { ref, set, serverTimestamp } from 'firebase/database';
 import { createRound, randomTarget } from './round.js';
 import { createGuessRound, randomGuessTarget } from './guess.js';
+import { createHardRace } from './hardrace.js';
+import { randomHardTarget } from './hardclassic.js';
 import { logTransition } from './session.js';
-
-// Hard band mirrors koth: fast, reactive targets (0.5-3.5s) at tenths.
-const hardTarget = () => Math.round((500 + Math.random() * 3000) / 100) * 100;
 
 export function createMatch({ db, room, players, onTv, onMatch, roundKindFn, onMoment, initialEliminated = [], initialRoundNum = 0 }) {
   let alive = players.map(({ playerId, name }) => ({ playerId, name }));
@@ -38,13 +37,16 @@ export function createMatch({ db, room, players, onTv, onMatch, roundKindFn, onM
 
   function applyElimination(roundState) {
     const slots = Object.values(roundState.players);
-    // Guess rounds score by deltaMs; a never-locked guess is the DNF analogue.
-    const isGuess = roundState.actualMs != null || slots.some((s) => s.state === 'guessed');
-    const missed = isGuess
-      ? slots.filter((s) => s.guessMs == null)
+    // Race rounds are binary: you hit the zone or you're out (last one in /
+    // idle DNFs). Guess rounds score by deltaMs; a never-locked guess is the
+    // DNF analogue. Classic scores by deviation with DNFs out first.
+    const isRace = roundState.mode === 'hardrace';
+    const isGuess = !isRace && (roundState.actualMs != null || slots.some((s) => s.state === 'guessed'));
+    const missed = isRace ? slots.filter((s) => !s.hit)
+      : isGuess ? slots.filter((s) => s.guessMs == null)
       : slots.filter((s) => s.state === 'dnf');
-    const scored = (isGuess
-      ? slots.filter((s) => s.guessMs != null).map((s) => ({ ...s, _dev: Math.abs(s.deltaMs) }))
+    const scored = (isRace ? []
+      : isGuess ? slots.filter((s) => s.guessMs != null).map((s) => ({ ...s, _dev: Math.abs(s.deltaMs) }))
       : slots.filter((s) => s.state === 'stopped').map((s) => ({ ...s, _dev: s.deviationMs })))
       .sort((a, b) => a._dev - b._dev);
 
@@ -54,7 +56,7 @@ export function createMatch({ db, room, players, onTv, onMatch, roundKindFn, onM
       logTransition('match', 'round', 'no-elimination', `round ${roundNum}: everyone missed — replay`);
     } else if (missed.length > 0) {
       out = missed;
-      reasonFor = () => (isGuess ? 'no guess' : 'DNF');
+      reasonFor = (s) => (isRace ? (s.idle ? 'idle DNF' : 'last to the zone') : isGuess ? 'no guess' : 'DNF');
     } else {
       out = [scored[scored.length - 1]];
       reasonFor = (s) => `worst deviation (${s._dev}ms)`;
@@ -94,12 +96,15 @@ export function createMatch({ db, room, players, onTv, onMatch, roundKindFn, onM
         db, room, players: alive, targetMs: randomGuessTarget(),
         onTv: settle, onMoment: (m) => onMoment?.(m),
       });
+    } else if (kind === 'hard') {
+      // RACE TO SAFETY (kepu): no attempt cap — hit the zone to lock your
+      // spot; the LAST player to get it is the round's eliminee.
+      currentRound = createHardRace({
+        db, room, players: alive, targetMs: randomHardTarget(), onTv: settle,
+      });
     } else {
-      const isHard = kind === 'hard';
       currentRound = createRound({
-        db, room, players: alive, hard: isHard,
-        targetMs: isHard ? hardTarget() : randomTarget(),
-        onTv: settle,
+        db, room, players: alive, targetMs: randomTarget(), onTv: settle,
       });
     }
     currentRound.begin();

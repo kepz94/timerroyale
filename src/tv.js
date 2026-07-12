@@ -214,6 +214,48 @@ function renderHard(g, teamCtx) {
   }
 }
 
+// RACE TO SAFETY board (LMS hard rounds): the zone up top, every survivor's
+// status as a row — safe spots lock in hit order, the last one in is out.
+function renderHardRace(g) {
+  showScreen('hard');
+  const ids = Object.keys(g.players);
+  const target1 = fmtS(g.targetMs);
+  const zoneLo = Math.floor(g.targetMs / 100) * 100, zoneHi = zoneLo + 99;
+  const safeCount = (g.safe || []).length;
+  const over = g.status === 'over';
+  el('hard-head').textContent = over ? '🔒 ZONE CLOSED' : '🏁 RACE TO SAFETY';
+  el('hard-sub').textContent = over
+    ? `${safeCount} made it in`
+    : `${safeCount} of ${ids.length - 1} spots locked — LAST ONE IN IS OUT`;
+  el('hard-target').innerHTML = ledHtml(target1);
+  el('hard-zone').textContent = `HIT THE ZONE ${fmtS2(zoneLo)}s – ${fmtS2(zoneHi)}s`;
+  const hc = el('hard-clock'); if (hc) hc.hidden = true;
+  const hist = el('hard-history');
+  hist.classList.toggle('rows-2col', ids.length > 8);
+  hist.innerHTML = '';
+  const order = [...(g.safe || []), ...ids.filter((id) => !(g.safe || []).includes(id))];
+  order.forEach((id) => {
+    const s = g.players[id];
+    const li = document.createElement('li');
+    const safeIdx = (g.safe || []).indexOf(id);
+    if (safeIdx >= 0) {
+      li.className = 'round-row hit';
+      li.innerHTML = `<span class="row-name">🎯 ${s.name}</span><span class="row-time">SAFE #${safeIdx + 1}${s.elapsedMs != null ? ` · ${fmtS2(s.elapsedMs)}s` : ''}</span>`;
+    } else if (s.state === 'dnf' || s.state === 'out') {
+      li.className = 'round-row dnf';
+      li.innerHTML = `<span class="row-name">💀 ${s.name}</span><span class="row-time">${s.state === 'dnf' ? 'IDLE — OUT' : 'LAST ONE IN'}</span>`;
+    } else {
+      li.className = 'round-row waiting';
+      li.innerHTML = `<span class="row-name">⏱ ${s.name}</span><span class="row-time">${(g.attempts?.[id] || []).length} tries</span>`;
+    }
+    hist.appendChild(li);
+  });
+  el('hard-winner').textContent = '';
+  el('hard-representing').textContent = '';
+  el('tv-game-msg').classList.remove('final');
+  el('tv-game-msg').textContent = '';
+}
+
 function showLedger(aName, aWon, bName, bWon, aColor = '', bColor = '') {
   const l = el('tv-ledger');
   l.hidden = false;
@@ -506,6 +548,11 @@ const TUTORIALS = {
     ['FEEL THE TIME', 'Count in your head. A RED flash and a lower beep mean the timer stopped. Nobody knows how long it ran — that IS the game.'],
     ['LOCK IT IN', 'Type how long you think it ran on your phone keypad, down to hundredths — 8.87 beats "about 9". Closest guess takes the round.'],
   ]],
+  hardrace: ['HARD CLASSIC — THE RACE', [
+    ['THE ZONE', 'One tiny window. You must land INSIDE the tenth: on target 2.5, anything from 2.50 to 2.59 counts — 2.60 misses.'],
+    ['RACE TO SAFETY', 'Everyone attempts at once — start, stop, again. NO attempt limit. Hit the zone and you\'re SAFE: your spot locks in.'],
+    ['LAST ONE IN IS OUT', 'The round ends the moment only one player hasn\'t hit — and that player is eliminated. Idle for 30 seconds and you\'re out too.'],
+  ]],
   lms: ['LAST ONE STANDING', [
     ['EVERYONE PLAYS', 'Every round, ALL survivors time the same amber target at once. Tap to START your clock, count in your head — no clock on your phone — tap to STOP on the target.'],
     ['WORST IS OUT', 'When everyone locks in, the times are revealed. The FURTHEST from the target is eliminated. Idle past 30 seconds and it\'s a DNF — every DNF that round goes home.'],
@@ -565,8 +612,9 @@ function beginRound() {
   if (!reps) {
     // All-play (LMS): no matchup beat, but the kind still resolves HERE so a
     // first-play tutorial can front the round; the engine consumes nextKind.
+    // Hard is a different game in all-play (race to safety) — its own tutorial.
     nextKind = resolveMode(pool);
-    runTutorial(nextKind, () => { engine.nextRound(); nextKind = null; });
+    runTutorial(nextKind === 'hard' ? 'hardrace' : nextKind, () => { engine.nextRound(); nextKind = null; });
     return;
   }
   nextKind = resolveMode(pool);
@@ -721,7 +769,8 @@ function onElimUpdate(m, out) {
 }
 
 function elimCeremony(out, m) {
-  const why = out[0].state === 'dnf' ? 'The clock won — DNF'
+  const why = out[0].state === 'out' ? 'Last to the zone'
+    : out[0].state === 'dnf' ? 'The clock won — DNF'
     : out[0].state !== 'stopped' && out[0].guessMs == null && out[0].deltaMs == null ? 'Never locked a guess'
     : 'Worst miss of the round';
   return titleCard({
@@ -1285,6 +1334,7 @@ function renderTeamRound(g, ctx) {
 /* ---------------- rendering (PvE round + PvP duel) ---------------- */
 function renderRound(g) {
   noteRoundOver(g);
+  if (g.mode === 'hardrace') { renderHardRace(g); return; }
   if (g.mode === 'hard') { renderHard(g, null); return; }
   if (g.mode === 'guess') { renderGuess(g, null); return; }
   const ids = Object.keys(g.players);
