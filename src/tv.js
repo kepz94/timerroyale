@@ -241,6 +241,7 @@ function fillRows(g, labelById) {
   const order = g.status === 'over' && g.ranking
     ? g.ranking.concat(Object.keys(g.players).filter((id) => !g.ranking.includes(id)))
     : Object.keys(g.players);
+  rows.classList.toggle('rows-2col', order.length > 8); // big fields split in two
   order.forEach((id) => {
     const s = g.players[id];
     const li = document.createElement('li'); li.className = `round-row ${s.state}`;
@@ -332,19 +333,35 @@ function renderGuess(g, teamCtx) {
     ? `${teamCtx.teamA.name}  ${teamCtx.winsA}–${teamCtx.winsB}  ${teamCtx.teamB.name}   ·  GUESS THE CLOCK`
     : 'GUESS THE CLOCK';
   const actual = el('guess-actual'), cards = el('guess-cards');
+  // All-play fields (LMS): cards can't hold more than 4 players — compact rows
+  // take over, two columns once the field passes 8.
+  const many = ids.length > 4;
+  const rowsClass = `round-rows${ids.length > 8 ? ' rows-2col' : ''}`;
   if (g.status === 'over') {
     // Stage 1 (ADR-005): the reveal order is REVERSED — guesses show first,
     // the actual time lands last.
     const key = `${g.actualMs}:${ids.map((id) => g.players[id].guessMs).join(',')}`;
     const drawCards = (withDev) => {
+      cards.className = many ? rowsClass : 'reveal-cards';
       cards.innerHTML = '';
-      ids.forEach((id, i) => {
+      const order = withDev && many
+        ? [...ids].sort((x, y) => Math.abs(g.players[x].deltaMs ?? Infinity) - Math.abs(g.players[y].deltaMs ?? Infinity))
+        : ids;
+      order.forEach((id, i) => {
         const s = g.players[id];
         const isWin = withDev && g.winner && g.winner.playerId === id;
         const guess = s.guessMs != null ? `${fmtS2(s.guessMs)}s` : '0.00s';
         const dev = withDev
           ? (s.guessMs != null ? `DEVIATION ${fmtSigned(s.guessMs - g.actualMs)}s` : 'no guess')
           : '';
+        if (many) {
+          const row = document.createElement('div');
+          row.className = 'round-row' + (isWin ? ' hit' : '') + (withDev && s.guessMs == null ? ' dnf' : '');
+          row.innerHTML = `<span class="row-name">${isWin ? '🏆 ' : ''}${s.name}</span>`
+            + `<span class="row-time">${s.guessMs != null ? guess : '—'}${dev ? ` <span class="deviation">${dev}</span>` : ''}</span>`;
+          cards.appendChild(row);
+          return;
+        }
         const card = document.createElement('div');
         card.className = 'reveal-card' + (isWin ? ' win' : '');
         card.innerHTML = `<div class="rc-team">${labelFor(id, i)}</div><div class="rc-name">${s.name}</div><div class="rc-time">${guess}</div><div class="rc-dev">${dev}</div>`;
@@ -372,10 +389,18 @@ function renderGuess(g, teamCtx) {
     guessRevealKey = null; clearTimeout(guessRevealTimer);
     el('guess-head').textContent = '🚨 TIME IS UP — SUBMIT YOUR GUESS!';
     actual.hidden = true;
+    cards.className = many ? rowsClass : 'reveal-cards';
     cards.innerHTML = '';
     ids.forEach((id, i) => {
       const s = g.players[id];
       const locked = s.state === 'guessed';
+      if (many) {
+        const row = document.createElement('div');
+        row.className = 'round-row' + (locked ? ' hit' : '');
+        row.innerHTML = `<span class="row-name">${s.name}</span><span class="row-time">${locked ? '🔒 LOCKED' : 'THINKING…'}</span>`;
+        cards.appendChild(row);
+        return;
+      }
       const card = document.createElement('div');
       card.className = 'reveal-card' + (locked ? ' win' : '');
       card.innerHTML = `<div class="rc-team">${labelFor(id, i)}</div><div class="rc-name">${s.name}</div><div class="rc-time" style="font-size:clamp(2rem,5vw,5rem)">${locked ? 'LOCKED IN 🔒' : 'THINKING…'}</div>`;
@@ -535,9 +560,15 @@ function advanceTutorial() {
 
 function beginRound() {
   if (!engine) return;
-  const reps = engine.peekReps ? engine.peekReps() : null;
-  if (!reps) { engine.nextRound(); return; } // PvE all-play: no matchup beat
   const pool = Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
+  const reps = engine.peekReps ? engine.peekReps() : null;
+  if (!reps) {
+    // All-play (LMS): no matchup beat, but the kind still resolves HERE so a
+    // first-play tutorial can front the round; the engine consumes nextKind.
+    nextKind = resolveMode(pool);
+    runTutorial(nextKind, () => { engine.nextRound(); nextKind = null; });
+    return;
+  }
   nextKind = resolveMode(pool);
   runTutorial(nextKind, () => presentMatchup(reps));
 }
@@ -657,7 +688,11 @@ function launchLms() {
   if (roster.length < 2) return setupMsg('Last One Standing needs at least 2 players.');
   isTeams = false; tourney = null; bracket = null; hill = null;
   showGame(true);
-  engine = createElim({ db, room: lobbyId, players: roster, onTv: { state: renderRound }, onMatch: onElimUpdate });
+  const pool = () => Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k);
+  engine = createElim({
+    db, room: lobbyId, players: roster, onTv: { state: renderRound }, onMatch: onElimUpdate,
+    roundKindFn: () => nextKind || resolveMode(pool()), onMoment: flashCue,
+  });
   logTransition('tv', 'setup', 'lms-launch', `${roster.length} players`);
   (async () => {
     await titleCard({ kicker: 'Tonight', title: 'LAST ONE STANDING', hint: 'Worst miss goes home — survive to the end', tone: 'danger' });
@@ -686,11 +721,13 @@ function onElimUpdate(m, out) {
 }
 
 function elimCeremony(out, m) {
-  const dnf = out[0].state === 'dnf';
+  const why = out[0].state === 'dnf' ? 'The clock won — DNF'
+    : out[0].state !== 'stopped' && out[0].guessMs == null && out[0].deltaMs == null ? 'Never locked a guess'
+    : 'Worst miss of the round';
   return titleCard({
     kicker: `Round ${m.roundNum}`,
     title: out.length > 1 ? `💀 ${out.length} ELIMINATED` : `💀 ${out[0].name} IS OUT`,
-    hint: out.length > 1 ? out.map((s) => s.name).join(' · ') : (dnf ? 'The clock won — DNF' : 'Worst miss of the round'),
+    hint: out.length > 1 ? out.map((s) => s.name).join(' · ') : why,
     tone: 'danger', ms: 3400, sound: 'fall',
   });
 }
@@ -1525,6 +1562,8 @@ async function boot() {
       showGame(true);
       engine = createElim({
         db, room: lobbyId, players: alive, onTv: { state: renderRound }, onMatch: onElimUpdate,
+        roundKindFn: () => nextKind || resolveMode(Object.entries(config.pool).filter(([, v]) => v).map(([k]) => k)),
+        onMoment: flashCue,
         initialEliminated: m.eliminated || [],
         // A round interrupted mid-flight reruns under the SAME number.
         initialRoundNum: m.status === 'round' ? Math.max(0, (m.roundNum || 1) - 1) : (m.roundNum || 0),

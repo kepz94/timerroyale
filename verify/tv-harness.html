@@ -282,6 +282,31 @@
             `<div class="reveal-card"><div class="rc-team">SHARKNADOOOOOOOS</div><div class="rc-name">${LONGP[1]}</div><div class="rc-time">12.00s</div><div class="rc-dev">DEVIATION +3.13s</div></div>`;
           el('guess-winner').textContent = '🏆 THUNDERDOMES wins the round! (+1)';
         },
+        lmsrows() {
+          // 16-player classic all-play, round over (ranked rows, 2 columns)
+          showGame(); show('tv-active');
+          el('tv-match-banner').innerHTML = '<span class="tv-words">💀 LAST ONE STANDING — ROUND 3</span>';
+          el('tv-target').innerHTML = ledHtml('12.3');
+          const rows = el('tv-round-rows');
+          rows.classList.add('rows-2col');
+          rows.innerHTML = LONGP.map((p, i) =>
+            `<li class="round-row ${i === 15 ? 'dnf' : 'stopped'}"><span class="row-name">${i === 0 ? '🏆 ' : ''}${p}</span><span class="row-time">${i === 15 ? 'DNF' : `1${i}.4${i}s <span class="deviation">Δ +0.${String(i).padStart(2, '0')}s</span>`}</span></li>`).join('');
+          el('tv-game-msg').className = 'game-msg final';
+          el('tv-game-msg').textContent = '🏆 MAXIMILIANOOOOOO takes the round!';
+        },
+        lmsguess() {
+          // 16-player guess reveal (compact rows, 2 columns, actual last)
+          showGame(); show('tv-guess');
+          el('tv-match-banner').textContent = 'GUESS THE CLOCK';
+          el('guess-head').textContent = 'THE REVEAL';
+          el('guess-actual').hidden = false;
+          el('guess-actual').innerHTML = `<span class="tv-words">Actual time</span>${ledHtml('8.87')}`;
+          const cards = el('guess-cards');
+          cards.className = 'round-rows rows-2col';
+          cards.innerHTML = LONGP.map((p, i) =>
+            `<div class="round-row ${i === 0 ? 'hit' : ''} ${i === 15 ? 'dnf' : ''}"><span class="row-name">${i === 0 ? '🏆 ' : ''}${p}</span><span class="row-time">${i === 15 ? '—' : `8.${90 + i}s`} <span class="deviation">DEVIATION +0.${String(3 + i).padStart(2, '0')}s</span></span></div>`).join('');
+          el('guess-winner').textContent = '🏆 MAXIMILIANOOOOOO wins the round! (+1)';
+        },
         lms() {
           showGame();
           el('tv-standings').hidden = false;

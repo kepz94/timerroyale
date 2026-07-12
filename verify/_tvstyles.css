@@ -228,6 +228,15 @@
       @keyframes slamIn { from { transform: scale(1.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
       @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
+      /* All-play fields (LMS): status/guess rows split into two columns so a
+         16-player round still fits the stage */
+      .rows-2col { grid-template-columns: 1fr 1fr; gap: .4rem 1.2rem;
+        width: 92vw; max-width: 92vw; }
+      #tv-game .rows-2col .round-row { font-size: clamp(.9rem, 1.6vw, 1.7rem);
+        padding: clamp(.3rem, .7vh, .7rem) clamp(.8rem, 1.4vw, 1.4rem); }
+      #tv-game .rows-2col .deviation { font-size: clamp(.8rem, 1.3vw, 1.4rem); }
+      #guess-cards.round-rows { display: grid; gap: .4rem; margin: 0 auto; }
+
       /* Hill line / standings pills at couch size */
       #tv-standings .standing { font-size: clamp(1rem, 1.8vw, 1.9rem); padding: .45rem 1.3rem; }
 
@@ -297,13 +306,14 @@
       /* overflow:clip — the stage is a fixed 1080p canvas: transient animation
          overshoot (slam scale-in) must never flash a scrollbar. At-rest content
          always fits (verified), so nothing real is ever clipped. */
-      body.host.playing #tv-game { height: 100vh; padding: 3vh 3vw; gap: 1.4vh; overflow: clip; }
+      body.host.playing #tv-game { height: 100vh; padding: 2.4vh 3vw; gap: 1.4vh; overflow: clip; }
       #tv-game, .tv-state, #draft-stage { grid-template-columns: minmax(0, 1fr); }
       .tv-state { gap: 1.6vh; }
       /* Empty text slots must not cost grid gaps — dense screens need the air */
       #tv-game > p:empty, .tv-state > p:empty { display: none; }
       #tv-match-banner { font-size: clamp(1.1rem, 2.1vw, 2.4rem); white-space: nowrap;
-        overflow: hidden; text-overflow: ellipsis; max-width: 94vw; }
+        overflow: hidden; text-overflow: ellipsis; max-width: 94vw;
+        line-height: 1.4; /* contains emoji ascent — inline spans must not poke past the stage */ }
       .tv-ledger .team .name { font-size: clamp(.9rem, 1.6vw, 1.8rem); }
       .tv-ledger .team .dot-strip { font-size: clamp(1.6rem, 3vw, 3.2rem); }
       #tv-game #tv-target, #tv-game .timer-digits { font-size: clamp(3rem, 9vw, 10rem); }
